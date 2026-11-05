@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" fill="none">
+  <defs>
+    <mask id="fox-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff" />
+      <path fill="#000" d="M190 231c21 6 39 17 50 35 8 13 11 30 12 50-5-23-13-37-26-47-19-3-30-15-36-38Z" />
+      <path fill="#000" d="M190 231c21 6 39 17 50 35 8 13 11 30 12 50-5-23-13-37-26-47-19-3-30-15-36-38Z" transform="translate(512 0) scale(-1 1)" />
+    </mask>
+    <path id="fox-half" d="M256 126c29-12 57-9 83 5 14-35 48-59 92-71 3 30 1 61-7 89-7 24-23 38-43 54 11 32 36 57 74 81-27-2-50 0-74 14 25-8 50-5 73 2-45 10-78 33-113 63-17 15-26 34-34 51-5 13-11 23-21 28-10-7-20-13-30-13V126Z" />
+    <symbol id="metafrix-fox" viewBox="96 48 320 420">
+      <g fill="currentColor" mask="url(#fox-cutouts)">
+        <use href="#fox-half" />
+        <use href="#fox-half" transform="translate(512 0) scale(-1 1)" />
+      </g>
+      <path d="M235 432c7-6 14-9 21-9s14 3 21 9l-10 15c-4 5-8 8-11 9-4-1-8-4-12-9l-9-15Z" fill="#34373D" />
+    </symbol>
+  </defs>
+
+  <path d="M45 191c26 42 57 62 91 62m48 0c34 0 65-20 91-62" stroke="#51445F" stroke-width="2" stroke-dasharray="4 9" stroke-linecap="round" />
+  <path d="M77 213c-8-16-12-31-12-48m190 48c8-16 12-31 12-48" stroke="#51445F" stroke-width="2" stroke-linecap="round" />
+  <use href="#metafrix-fox" x="109" y="36" width="102" height="155" style="color:#E94F16" />
+  <use href="#metafrix-fox" x="27" y="125" width="60" height="92" style="color:#AA99FF" />
+  <use href="#metafrix-fox" x="233" y="125" width="60" height="92" style="color:#72D6E3" />
+  <circle cx="65" cy="163" r="3" fill="#AA99FF" />
+  <circle cx="255" cy="163" r="3" fill="#72D6E3" />
+</svg>
