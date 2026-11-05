@@ -10,6 +10,8 @@ le frontend Next.js ; le backend reste à construire.
 - Données : plusieurs écrans utilisent encore des données de démonstration et le
 	store Zustand. L’application n’est pas encore intégrée à un backend complet.
 - API : un client Axios et des services de départ existent dans `src/services/`.
+- CI : GitHub Actions vérifie le lint et le build sur les pushes de branches et
+	les pull requests vers `main`.
 - Contrat et tâches de démarrage backend : voir
 	[`docs/backend-handoff.md`](docs/backend-handoff.md).
 
