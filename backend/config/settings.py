@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # Rest framework packagej
+    'rest_framework',
     # Local apps
     'apps.api.apps.ApiConfig',
     'apps.audits.apps.AuditsConfig',
