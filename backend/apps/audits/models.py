@@ -5,11 +5,11 @@ from django.core.serializers.json import DjangoJSONEncoder
 
 class AuditLog(models.Model):
     class DangerDegree(models.TextChoices):
-        LOW = '1', "Dangerosite faible"
-        AVERAGE = '2', "Dangerosite moyenne"
-        HIGH = '3', "Dangerosite elevee"
+        LOW = 'low', "Dangerosite faible"
+        AVERAGE = 'average', "Dangerosite moyenne"
+        HIGH = 'high', "Dangerosite elevee"
         # No backup action
-        VERY_HIGH = '4', "Dangerosite tres elevee pas de moyen d'annulation"
+        VERY_HIGH = 'very_high', "Dangerosite tres elevee pas de moyen d'annulation"
         
     class Action(models.TextChoices):
         CREATE = 'create', "Creation"
@@ -27,7 +27,6 @@ class AuditLog(models.Model):
     
     class Meta:
         ordering = ['-created_at', '-id']
-        default_permissions = ('view', )
         verbose_name = "Journal d'audit"
         verbose_name_plural = "Journal d'audit"
         
