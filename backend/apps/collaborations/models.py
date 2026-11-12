@@ -85,6 +85,7 @@ class Attachment(models.Model):
     file = models.FileField(upload_to='boards/files/')
     board = models.ForeignKey(Board, on_delete=models.PROTECT, related_name='files')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(Member, on_delete=models.DO_NOTHING, related_name='attachments')
     
     class Meta:
         verbose_name = "Pièce jointe"
