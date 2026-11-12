@@ -1,3 +1,4 @@
+from uuid import uuid4
 from django.db import models
 from django.conf import settings
 
@@ -24,7 +25,8 @@ class Event(models.Model):
         
     def __str__(self) -> str:
         return f"{self.name} par {self.organisator}"
-    
+
+# Post model
 class Post(models.Model):
     title = models.CharField(max_length=100)
     description = models.TextField()
@@ -37,9 +39,31 @@ class Post(models.Model):
     def __str__(self) -> str:
         return f"{self.posted_by} : {self.title}"
     
+# Reel model
+class Reel(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', "En attente"
+        PROCESSING = 'processing', "Compression en cours"
+        READY = 'ready', "Prêt"
+        FAILED = 'failed', "Echec"
+        
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reels')
+    caption = models.TextField(max_length=2200, blank=True)
+    raw_video = models.FileField(upload_to='reels/raw/')
+    processed_video = models.FileField(upload_to='reels/processed', null=True, blank=True)
+    thumbnail = models.ImageField(upload_to='reels/thumbnails/', null=True, blank=True)
+    duration = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+
+    def __str__(self) -> str:
+        return f"Reel {self.id} - {self.status}"
+
+# Like model
 class Like(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='likes', null=True, blank=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='likes', null=True, blank=True)
+    reel = models.ForeignKey(Reel, on_delete=models.CASCADE, related_name='reels', null=True, blank=True)
     liked_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.DO_NOTHING, related_name='likes')
     liked_at = models.DateTimeField(auto_now_add=True)
     
