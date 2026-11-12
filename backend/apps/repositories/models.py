@@ -12,7 +12,8 @@ class Repository(models.Model):
     access = models.CharField(max_length=20, choices=Access.choices)
     description = models.TextField(blank=True, null=True)
     archived = models.BooleanField(default=False)
-    license = models.TextField(blank=True, null=True)
+    license_template = models.CharField(max_length=50, null=True, blank=True,)
+    gitignore_template = models.CharField(max_length=60, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(blank=True, null=True)
     
@@ -70,7 +71,6 @@ class Issue(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='issues')
     submitted_at = models.DateTimeField(auto_now_add=True)
-    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True)
     
     class Meta:
         ordering = ['-submitted_at',]
@@ -93,7 +93,6 @@ class IssueAttachment(models.Model):
         
     def __str__(self) -> str:
         return f"Fichier {self.file.name} pour l'issue {self.issue.title} à {self.uploaded_at}"
-
 
 # Pull request model
 class PullRequest(models.Model):
