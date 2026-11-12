@@ -43,6 +43,7 @@ class User(AbstractUser):
         OTHER = 'other', "Autre"
         
     expertise_domain = models.CharField(max_length=60, choices=Domain.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         verbose_name = "Utilisateur"
