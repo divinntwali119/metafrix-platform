@@ -45,7 +45,8 @@ INSTALLED_APPS = [
     'apps.collaborations.apps.CollaborationsConfig',
     'apps.posts.apps.PostsConfig',
     'apps.repositories.apps.RepositoriesConfig',
-    'apps.users.apps.UsersConfig'
+    'apps.users.apps.UsersConfig',
+    'apps.git_server.apps.GitServerConfig'
 ]
 
 MIDDLEWARE = [
