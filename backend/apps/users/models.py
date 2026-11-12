@@ -60,7 +60,7 @@ class Profile(models.Model):
     profile_img = models.ImageField(upload_to='user/profiles_images/', null=True, blank=True)
     bio = models.TextField(null=True, blank=True)
     site_url = models.URLField(max_length=30, null=True, blank=True)
-    location = models.CharField(max_length=100)
+    location = models.CharField(max_length=100, null=True, blank=True)
     updated_at = models.DateTimeField(null=True, blank=True)
     
     class Meta:
