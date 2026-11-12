@@ -74,7 +74,7 @@ class AttachemntSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attachment
         fields = ['slug', 'file', 'uploadedAt', 'uploadedBy']
-        read_only_fields = '__all__'
+        read_only_fields = ['slug', 'file', 'uploadedAt', 'uploadedBy']
 
 # Comment serializer
 class CommentSerializer(serializers.ModelSerializer):
