@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   MapPin,
   Globe,
@@ -18,6 +19,10 @@ import {
 import { useAfriHubStore } from "@/lib/store";
 import { PostCard } from "@/components/social/PostCard";
 import { MemberCover } from "@/components/social/MemberCover";
+import { socialService } from "@/services/social.service";
+import { repositoryService } from "@/services/repository.service";
+import { getApiErrorMessage } from "@/lib/api-error";
+import type { Post, Repository, User } from "@/types";
 
 function GithubMark() {
   return (
@@ -44,27 +49,132 @@ interface PageProps {
 export default function DeveloperProfilePage({ params }: PageProps) {
   const resolvedParams = use(params);
   const { username } = resolvedParams;
-  const { users, currentUser, repositories, posts, toggleFollowUser, setActiveConversationId } =
-    useAfriHubStore();
+  const router = useRouter();
+  const {
+    users,
+    currentUser,
+    repositories,
+    posts,
+    isAuthenticated,
+    authLoading,
+    toggleFollowUser,
+    setActiveConversationId,
+    updateProfile,
+  } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const [apiUser, setApiUser] = useState<User | null>(null);
+  const [apiRepositories, setApiRepositories] = useState<Repository[]>([]);
+  const [apiPosts, setApiPosts] = useState<Post[]>([]);
+  const [loadedProfileKey, setLoadedProfileKey] = useState("");
+  const [apiError, setApiError] = useState("");
+  const [isSavingFollow, setIsSavingFollow] = useState(false);
+  const [isStartingMessage, setIsStartingMessage] = useState(false);
+  const profileKey = `${username.toLowerCase()}:${isAuthenticated ? currentUser.id : "anonymous"}`;
+  const isLoading = !isDemoMode && (authLoading || loadedProfileKey !== profileKey);
 
-  const user =
-    users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  useEffect(() => {
+    if (isDemoMode) return;
+    let active = true;
+    if (authLoading) return () => { active = false; };
+    void Promise.all([
+      socialService.getDeveloper(username),
+      repositoryService.getRepositories({ owner: username }),
+      socialService.getPosts({ author: username, page: 1 }),
+    ]).then(([profile, profileRepositories, profilePosts]) => {
+      if (!active) return;
+      setApiUser(profile);
+      setApiRepositories(profileRepositories);
+      setApiPosts(profilePosts.results);
+      setLoadedProfileKey(profileKey);
+    }).catch((error: unknown) => {
+      if (active) {
+        setApiError(getApiErrorMessage(error, "Le profil n’a pas pu être chargé."));
+        setLoadedProfileKey(profileKey);
+      }
+    }).finally(() => {
+      if (active) setLoadedProfileKey(profileKey);
+    });
+    return () => { active = false; };
+  }, [authLoading, isAuthenticated, currentUser.id, isDemoMode, username, profileKey]);
+
+  const handleFollow = async (profile: User) => {
+    if (isDemoMode) {
+      toggleFollowUser(profile.id);
+      return;
+    }
+    if (!isAuthenticated) {
+      setApiError("Connectez-vous pour suivre ce développeur.");
+      return;
+    }
+    setIsSavingFollow(true);
+    setApiError("");
+    try {
+      const result = await socialService.setFollowed(profile.username, !profile.isFollowed);
+      const delta = result.isFollowed === Boolean(profile.isFollowed) ? 0 : result.isFollowed ? 1 : -1;
+      setApiUser((current) => current ? { ...current, isFollowed: result.isFollowed, followersCount: result.followersCount } : current);
+      if (delta) updateProfile({ followingCount: Math.max(0, currentUser.followingCount + delta) });
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "La demande de suivi a échoué."));
+    } finally {
+      setIsSavingFollow(false);
+    }
+  };
+
+  const handleMessage = async (profile: User) => {
+    if (isDemoMode) {
+      setActiveConversationId("conv-1");
+      router.push("/messages");
+      return;
+    }
+    if (!isAuthenticated) {
+      setApiError("Connectez-vous pour envoyer un message.");
+      return;
+    }
+    setIsStartingMessage(true);
+    setApiError("");
+    try {
+      const conversation = await socialService.getOrCreateDirectConversation(profile.username);
+      router.push(`/messages?conversation=${encodeURIComponent(conversation.id)}`);
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "La conversation n’a pas pu être ouverte."));
+    } finally {
+      setIsStartingMessage(false);
+    }
+  };
+
+  const user = isDemoMode
+    ? users.find((candidate) => candidate.username.toLowerCase() === username.toLowerCase())
+    : apiUser?.username.toLowerCase() === username.toLowerCase() ? apiUser : null;
+
+  if (!isDemoMode && isLoading) {
+    return <div className="mx-auto max-w-7xl space-y-4 px-4 py-8" role="status" aria-busy="true"><div className="h-48 animate-pulse rounded-2xl bg-(--muted)" /><div className="h-64 animate-pulse rounded-2xl bg-(--muted)" /><span className="sr-only">Chargement du profil…</span></div>;
+  }
 
   return user ? (
     <DeveloperProfileContent
       user={user}
       currentUser={currentUser}
-      repositories={repositories}
-      posts={posts}
-      toggleFollowUser={toggleFollowUser}
-      setActiveConversationId={setActiveConversationId}
+      repositories={isDemoMode ? repositories : apiRepositories}
+      posts={isDemoMode ? posts : apiPosts}
+      isDemoMode={isDemoMode}
+      onToggleFollow={() => void handleFollow(user)}
+      onMessage={() => void handleMessage(user)}
+      isSavingFollow={isSavingFollow}
+      isStartingMessage={isStartingMessage}
+      apiError={apiError}
+      onPostUpdate={(updatedPost) => setApiPosts((items) => isDemoMode
+        ? items.map((item) => item.id === updatedPost.id ? updatedPost : item)
+        : items.map((item) => item.id === updatedPost.id
+          ? { ...item, isLiked: updatedPost.isLiked, likesCount: updatedPost.likesCount, isBookmarked: updatedPost.isBookmarked, commentsCount: updatedPost.commentsCount }
+          : item))}
+      onPostDelete={(postId) => setApiPosts((items) => items.filter((item) => item.id !== postId))}
     />
   ) : (
     <div className="mx-auto flex min-h-[50vh] max-w-3xl flex-col items-center justify-center px-4 text-center">
       <UserRoundX className="h-10 w-10 text-[#8b949e]" aria-hidden="true" />
       <h1 className="mt-4 text-xl font-semibold text-[#e6edf3]">Profil introuvable</h1>
       <p className="mt-2 text-sm text-[#8b949e]">
-        Ce profil n&apos;existe pas ou n&apos;est plus disponible.
+        {apiError || "Ce profil n’existe pas ou n’est plus disponible."}
       </p>
       <Link href="/developers" className="mt-5 text-sm text-[#2f81f7] hover:underline">
         Découvrir les développeurs
@@ -78,15 +188,27 @@ function DeveloperProfileContent({
   currentUser,
   repositories,
   posts,
-  toggleFollowUser,
-  setActiveConversationId,
+  isDemoMode,
+  onToggleFollow,
+  onMessage,
+  isSavingFollow,
+  isStartingMessage,
+  apiError,
+  onPostUpdate,
+  onPostDelete,
 }: {
   user: import("@/types").User;
   currentUser: import("@/types").User;
   repositories: import("@/types").Repository[];
   posts: import("@/types").Post[];
-  toggleFollowUser: (userId: string) => void;
-  setActiveConversationId: (id: string | null) => void;
+  isDemoMode: boolean;
+  onToggleFollow: () => void;
+  onMessage: () => void;
+  isSavingFollow: boolean;
+  isStartingMessage: boolean;
+  apiError: string;
+  onPostUpdate: (post: Post) => void;
+  onPostDelete: (postId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"overview" | "repositories" | "posts" | "activity">("overview");
 
@@ -116,6 +238,7 @@ function DeveloperProfileContent({
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background pb-16">
+      {apiError && <p className="mx-auto mt-4 max-w-7xl rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-300" role="alert">{apiError}</p>}
       {/* Cover Image */}
       <MemberCover className="h-48 w-full sm:h-64">
         <div className="absolute inset-0 bg-linear-to-b from-black/25 via-transparent to-background" />
@@ -192,7 +315,8 @@ function DeveloperProfileContent({
               <>
                 <button
                   type="button"
-                  onClick={() => toggleFollowUser(user.id)}
+                  onClick={onToggleFollow}
+                  disabled={isSavingFollow}
                   aria-pressed={Boolean(user.isFollowed)}
                   className={`rounded-md border px-4 py-2 text-xs font-semibold transition-colors sm:text-sm ${
                     user.isFollowed
@@ -202,14 +326,15 @@ function DeveloperProfileContent({
                 >
                   {user.isFollowed ? "Abonné" : "Suivre"}
                 </button>
-                <Link
-                  href="/messages"
-                  onClick={() => setActiveConversationId("conv-1")}
-                  className="ui-button ui-button-secondary px-4 py-2 text-xs sm:text-sm"
+                <button
+                  type="button"
+                  onClick={onMessage}
+                  disabled={isStartingMessage}
+                  className="ui-button ui-button-secondary px-4 py-2 text-xs sm:text-sm disabled:opacity-60"
                 >
                   <MessageSquare className="h-4 w-4" />
-                  <span>Message</span>
-                </Link>
+                  <span>{isStartingMessage ? "Ouverture…" : "Message"}</span>
+                </button>
               </>
             ) : (
               <Link
@@ -281,7 +406,7 @@ function DeveloperProfileContent({
                     <span className="text-xs text-[#A1A1AA]">Série : 14 jours</span>
                   </div>
 
-                  <div className="overflow-x-auto pb-2">
+                  {isDemoMode ? <div className="overflow-x-auto pb-2">
                     <div className="flex min-w-150 gap-1.5">
                       {contributionWeeks.map((week) => (
                         <div key={week.week} className="flex flex-col gap-1.5">
@@ -300,7 +425,7 @@ function DeveloperProfileContent({
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </div> : <p className="text-xs text-[#8b949e]">Les données de contribution Git ne sont pas encore agrégées par le serveur.</p>}
                 </section>
 
                 {/* Pinned / Notable Repositories */}
@@ -452,7 +577,12 @@ function DeveloperProfileContent({
           {activeTab === "posts" && (
             <div className="max-w-3xl space-y-4">
               {userPosts.length > 0 ? (
-                userPosts.map((post) => <PostCard key={post.id} post={post} />)
+                userPosts.map((post) => <PostCard
+                  key={post.id}
+                  post={post}
+                  onUpdate={isDemoMode ? undefined : onPostUpdate}
+                  onDelete={isDemoMode ? undefined : onPostDelete}
+                />)
               ) : (
                 <div className="py-8 text-center text-xs text-[#8b949e]">
                   Aucune publication pour ce développeur.

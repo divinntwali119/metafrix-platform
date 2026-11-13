@@ -26,6 +26,7 @@ import { formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { currentUser, repositories, posts, users, toggleFollowUser } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
   const userRepos = repositories
     .filter((repository) => repository.owner.username === currentUser.username)
@@ -38,13 +39,9 @@ export default function DashboardPage() {
   const recentPosts = posts.slice(0, 3);
   const totalStars = userRepos.reduce((total, repository) => total + repository.starsCount, 0);
   const totalForks = userRepos.reduce((total, repository) => total + repository.forksCount, 0);
-  const profileFields = [
-    currentUser.bio,
-    currentUser.location,
-    currentUser.website,
-    currentUser.githubUrl,
-    currentUser.skills.length > 0,
-  ];
+  const profileFields = isDemoMode
+    ? [currentUser.bio, currentUser.location, currentUser.website, currentUser.githubUrl, currentUser.skills.length > 0]
+    : [currentUser.bio, currentUser.location, currentUser.website];
   const profileProgress = Math.round(
     (profileFields.filter(Boolean).length / profileFields.length) * 100
   );
@@ -58,20 +55,24 @@ export default function DashboardPage() {
   }));
 
   const stats = [
-    {
-      label: "Contributions",
-      value: currentUser.contributionsCount.toLocaleString("fr-FR"),
-      note: "cette année",
-      icon: Activity,
-      tone: "text-[#1877F2]",
-    },
-    {
-      label: "Abonnés",
-      value: currentUser.followersCount.toLocaleString("fr-FR"),
-      note: "dans la communauté",
-      icon: Users,
-      tone: "text-[#1877F2]",
-    },
+    ...(isDemoMode
+      ? [
+          {
+            label: "Contributions",
+            value: currentUser.contributionsCount.toLocaleString("fr-FR"),
+            note: "cette année",
+            icon: Activity,
+            tone: "text-[#1877F2]",
+          },
+          {
+            label: "Abonnés",
+            value: currentUser.followersCount.toLocaleString("fr-FR"),
+            note: "dans la communauté",
+            icon: Users,
+            tone: "text-[#1877F2]",
+          },
+        ]
+      : []),
     {
       label: "Étoiles reçues",
       value: totalStars.toLocaleString("fr-FR"),
@@ -191,48 +192,58 @@ export default function DashboardPage() {
                 <Flame className="mt-0.5 h-4 w-4 shrink-0 text-[#1877F2]" aria-hidden="true" />
                 <div>
                   <h2 className="text-sm font-semibold text-(--primary-text)">Activité & contributions</h2>
-                  <p className="mt-0.5 text-xs text-(--secondary-text)">Un aperçu de votre rythme de développement</p>
+                  <p className="mt-0.5 text-xs text-(--secondary-text)">
+                    {isDemoMode
+                      ? "Un aperçu de votre rythme de développement"
+                      : "Les données de contribution ne sont pas encore disponibles."}
+                  </p>
                 </div>
               </div>
-              <span className="text-[10px] text-(--secondary-text)">
-                28 dernières semaines
-              </span>
+              {isDemoMode && <span className="text-[10px] text-(--secondary-text)">28 dernières semaines</span>}
             </div>
 
-            <div className="pb-1">
-              <div className="grid grid-cols-28 gap-x-1 gap-y-0">
-                {contributionWeeks.map((week) => (
-                  <div key={week.week} className="flex flex-col gap-1">
-                    {week.days.map((level, dayIndex) => (
-                      <div
-                        key={dayIndex}
-                        className={`aspect-square w-full max-w-3 rounded-xs transition-transform hover:scale-125 ${
-                          level === 3
-                            ? "bg-violet-500"
-                            : level === 2
-                              ? "bg-violet-500/65"
-                              : level === 1
-                                ? "bg-violet-500/30"
-                                : "bg-(--muted)"
-                        }`}
-                        title={`${level * 3} contributions`}
-                      />
+            {isDemoMode ? (
+              <>
+                <div className="pb-1">
+                  <div className="grid grid-cols-28 gap-x-1 gap-y-0">
+                    {contributionWeeks.map((week) => (
+                      <div key={week.week} className="flex flex-col gap-1">
+                        {week.days.map((level, dayIndex) => (
+                          <div
+                            key={dayIndex}
+                            className={`aspect-square w-full max-w-3 rounded-xs transition-transform hover:scale-125 ${
+                              level === 3
+                                ? "bg-violet-500"
+                                : level === 2
+                                  ? "bg-violet-500/65"
+                                  : level === 1
+                                    ? "bg-violet-500/30"
+                                    : "bg-(--muted)"
+                            }`}
+                            title={`${level * 3} contributions`}
+                          />
+                        ))}
+                      </div>
                     ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            <div className="flex items-center justify-between pt-1 text-[10px] text-(--secondary-text)">
-              <span>Moins</span>
-              <div className="flex items-center gap-1.5" aria-label="Légende du niveau d’activité">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-(--muted)" />
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-violet-500/30" />
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-violet-500/65" />
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-violet-500" />
-              </div>
-              <span>Plus</span>
-            </div>
+                <div className="flex items-center justify-between pt-1 text-[10px] text-(--secondary-text)">
+                  <span>Moins</span>
+                  <div className="flex items-center gap-1.5" aria-label="Légende du niveau d’activité">
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-(--muted)" />
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-violet-500/30" />
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-violet-500/65" />
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-violet-500" />
+                  </div>
+                  <span>Plus</span>
+                </div>
+              </>
+            ) : (
+              <p className="rounded-lg border border-(--border) bg-(--card) p-4 text-sm text-(--secondary-text)">
+                Le graphe réel sera disponible lorsque les contributions Git seront agrégées.
+              </p>
+            )}
           </section>
 
           <section className="space-y-4">

@@ -32,6 +32,8 @@ export interface Repository {
   starsCount: number;
   forksCount: number;
   watchersCount: number;
+  isStarred?: boolean;
+  isWatching?: boolean;
   issuesCount: number;
   pullsCount: number;
   language: string;
@@ -47,7 +49,7 @@ export interface FileTreeItem {
   name: string;
   path: string;
   type: "file" | "dir";
-  size?: string;
+  size?: number | string;
   lastCommitMessage?: string;
   lastCommitDate?: string;
 }
@@ -214,6 +216,8 @@ export interface Organization {
   repositoriesCount: number;
   repositoryIds?: string[];
   createdAt: string;
+  isMember?: boolean;
+  viewerRole?: "owner" | "admin" | "member" | null;
   members: {
     user: User;
     role: "owner" | "admin" | "member";

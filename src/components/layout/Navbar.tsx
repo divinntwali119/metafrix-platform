@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Search,
   Bell,
@@ -19,13 +19,18 @@ import {
   FolderGit2,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { authService } from "@/services/auth.service";
+import { socialService } from "@/services/social.service";
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const {
     currentUser,
+    isAuthenticated,
+    logout,
     notifications,
     conversations,
     setIsSearchOpen,
@@ -33,9 +38,69 @@ export function Navbar() {
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
+  const [apiUnreadNotifications, setApiUnreadNotifications] = useState(0);
+  const [apiUnreadMessages, setApiUnreadMessages] = useState(0);
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
-  const unreadNotifications = notifications.filter((n) => !n.isRead).length;
-  const unreadMessages = conversations.reduce((acc, c) => acc + c.unreadCount, 0);
+  const unreadNotifications = isDemoMode
+    ? notifications.filter((notification) => !notification.isRead).length
+    : isAuthenticated ? apiUnreadNotifications : 0;
+  const unreadMessages = isDemoMode
+    ? conversations.reduce((total, conversation) => total + conversation.unreadCount, 0)
+    : isAuthenticated ? apiUnreadMessages : 0;
+
+  useEffect(() => {
+    if (isDemoMode || !isAuthenticated) return;
+    let active = true;
+    const refreshCounts = async () => {
+      const [notificationResult, conversationResult] = await Promise.allSettled([
+        socialService.getNotifications({ unread: true, page_size: 1 }),
+        socialService.getConversations(),
+      ]);
+      if (!active) return;
+      if (notificationResult.status === "fulfilled") {
+        setApiUnreadNotifications(notificationResult.value.count);
+      }
+      if (conversationResult.status === "fulfilled") {
+        setApiUnreadMessages(conversationResult.value.reduce((total, conversation) => total + conversation.unreadCount, 0));
+      }
+    };
+    void refreshCounts();
+    window.addEventListener("afrihub:notifications-updated", refreshCounts);
+    window.addEventListener("afrihub:conversations-updated", refreshCounts);
+    const intervalId = window.setInterval(() => void refreshCounts(), 30_000);
+    return () => {
+      active = false;
+      window.removeEventListener("afrihub:notifications-updated", refreshCounts);
+      window.removeEventListener("afrihub:conversations-updated", refreshCounts);
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser.id, isAuthenticated, isDemoMode, pathname]);
+
+  if (pathname === "/login" || pathname === "/register") {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <header className="site-navbar sticky top-0 z-40 w-full bg-[#0d1117]">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5">
+            <BrandMark size={32} className="h-8 w-8" />
+            <span className="text-lg font-semibold tracking-tight text-[#e6edf3]">MetafriX</span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/login" className="rounded-md px-3 py-2 text-sm text-[#c9d1d9] hover:bg-[#161b22]">
+              Connexion
+            </Link>
+            <Link href="/register" className="rounded-md bg-[#238636] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2ea043]">
+              Créer un compte
+            </Link>
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   const navLinks = [
     { href: "/feed", label: "Accueil", icon: Home },
@@ -204,13 +269,21 @@ export function Navbar() {
                 </div>
 
                 <div className="mt-1 border-t border-[#30363d] pt-1">
-                  <Link
-                    href="/login"
-                    className="flex items-center gap-2.5 px-4 py-2 text-[#f85149] transition-colors hover:bg-[#21262d]"
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await authService.logout();
+                      } finally {
+                        logout();
+                        router.replace("/login");
+                      }
+                    }}
+                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[#f85149] transition-colors hover:bg-[#21262d]"
                   >
                     <LogOut className="h-4 w-4" />
                     Déconnexion
-                  </Link>
+                  </button>
                 </div>
                 </div>
               )}

@@ -3,15 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Lock, Mail, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowRight, Lock, Mail, AlertCircle } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { authService } from "@/services/auth.service";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAfriHubStore();
-  const [email, setEmail] = useState("divin@metafrix.dev");
-  const [password, setPassword] = useState("••••••••••••");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -25,58 +26,66 @@ export default function LoginPage() {
     setIsLoading(true);
     setError("");
 
-    // Simulate API call
-    setTimeout(() => {
-      login(email);
-      setIsLoading(false);
+    try {
+      const { user } = await authService.login({ email: email.trim(), password });
+      login(user);
       router.push("/dashboard");
-    }, 600);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Connexion impossible. Réessayez."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl bg-[#111113] border border-[#27272A] p-8 shadow-2xl">
+    <div className="auth-page flex min-h-dvh items-center justify-center px-4 py-4 sm:px-6">
+      <div className="auth-card w-full max-w-sm rounded-2xl bg-[#111113] p-6 sm:p-7">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center">
-            <BrandMark size={56} className="h-14 w-14" />
+        <div className="mb-5 text-center">
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center">
+            <BrandMark size={48} className="h-12 w-12" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-white tracking-tight">
             Connexion à MetafriX
           </h1>
-          <p className="text-sm text-[#A1A1AA] mt-1.5">
+          <p className="mt-1.5 text-xs text-[#A1A1AA]">
             Accédez à vos dépôts Git et à votre réseau de développeurs
           </p>
         </div>
 
         {error && (
-          <div className="mb-6 flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+          <div className="mb-4 flex items-center gap-2 rounded-lg bg-rose-500/10 p-2.5 text-sm text-rose-400">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+            <label className="mb-1.5 block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
               Adresse e-mail ou nom d&apos;utilisateur
             </label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-3 h-4 w-4 text-[#A1A1AA]" />
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nom@domaine.com"
+                autoComplete="username"
+                placeholder="nom@domaine.com ou nom d’utilisateur"
                 required
-                className="w-full rounded-xl bg-[#18181B] border border-[#27272A] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#A1A1AA] focus:border-[#6366F1] focus:outline-none transition-colors"
+                className="auth-field w-full rounded-lg bg-[#18181B] py-2 pl-10 pr-4 text-sm text-white placeholder-[#A1A1AA] transition-colors"
               />
             </div>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-1.5 flex items-center justify-between">
               <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
                 Mot de passe
               </label>
@@ -94,8 +103,9 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Votre mot de passe"
+                autoComplete="current-password"
                 required
-                className="w-full rounded-xl bg-[#18181B] border border-[#27272A] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#A1A1AA] focus:border-[#6366F1] focus:outline-none transition-colors"
+                className="auth-field w-full rounded-lg bg-[#18181B] py-2 pl-10 pr-4 text-sm text-white placeholder-[#A1A1AA] transition-colors"
               />
             </div>
           </div>
@@ -103,7 +113,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#6366F1] py-2.5 px-4 text-sm font-semibold text-white shadow-md hover:bg-[#4F46E5] focus:outline-none transition-all disabled:opacity-50 mt-6"
+            className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-[#6366F1] px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[#4F46E5] disabled:opacity-50"
           >
             {isLoading ? (
               <span className="flex items-center gap-2">
@@ -119,14 +129,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo Credentials hint */}
-        <div className="mt-6 p-3 rounded-xl bg-[#18181B] border border-[#27272A] text-xs text-[#A1A1AA] flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>Compte démo pré-rempli pour tester immédiatement.</span>
-        </div>
-
         {/* Footer */}
-        <p className="mt-8 text-center text-xs text-[#A1A1AA]">
+        <p className="mt-5 text-center text-xs text-[#A1A1AA]">
           Pas encore de compte ?{" "}
           <Link href="/register" className="font-medium text-[#818CF8] hover:underline">
             Créer un compte MetafriX

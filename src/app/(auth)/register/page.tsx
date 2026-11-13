@@ -3,49 +3,72 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Lock, Mail, User } from "lucide-react";
+import { ArrowRight, Lock, Mail, User, AlertCircle } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { authService } from "@/services/auth.service";
 
 export default function RegisterPage() {
   const router = useRouter();
   const { login } = useAfriHubStore();
   const [formData, setFormData] = useState({
-    name: "Nouveau Développeur",
-    username: "dev_afrique",
-    email: "dev@metafrix.dev",
-    password: "Password123!",
+    name: "",
+    username: "",
+    email: "",
+    password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
-      login(formData.email);
-      setIsLoading(false);
+    setError("");
+    try {
+      const { user } = await authService.register({
+        ...formData,
+        name: formData.name.trim(),
+        username: formData.username.trim(),
+        email: formData.email.trim(),
+      });
+      login(user);
       router.push("/dashboard");
-    }, 600);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "La création du compte a échoué. Réessayez."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl bg-[#111113] border border-[#27272A] p-8 shadow-2xl">
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center">
-            <BrandMark size={56} className="h-14 w-14" />
+    <div className="auth-page flex min-h-dvh items-center justify-center px-4 py-4 sm:px-6">
+      <div className="auth-card w-full max-w-sm rounded-2xl bg-[#111113] p-5 sm:p-6">
+        <div className="mb-5 text-center">
+          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center">
+            <BrandMark size={44} className="h-11 w-11" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-white tracking-tight">
             Rejoindre MetafriX
           </h1>
-          <p className="text-sm text-[#A1A1AA] mt-1.5">
+          <p className="mt-1.5 text-xs text-[#A1A1AA]">
             Créez votre profil de développeur et publiez vos premiers projets
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg bg-rose-500/10 p-2.5 text-sm text-rose-400">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-2.5">
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+            <label className="mb-1 block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
               Nom complet
             </label>
             <div className="relative">
@@ -54,14 +77,17 @@ export default function RegisterPage() {
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                autoComplete="name"
+                minLength={2}
+                maxLength={150}
                 required
-                className="w-full rounded-xl bg-[#18181B] border border-[#27272A] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#A1A1AA] focus:border-[#6366F1] focus:outline-none transition-colors"
+                className="auth-field w-full rounded-lg bg-[#18181B] py-2 pl-10 pr-4 text-sm text-white placeholder-[#A1A1AA] transition-colors"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+            <label className="mb-1 block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
               Nom d&apos;utilisateur (@username)
             </label>
             <div className="relative">
@@ -72,14 +98,19 @@ export default function RegisterPage() {
                 type="text"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                minLength={3}
+                maxLength={150}
                 required
-                className="w-full rounded-xl bg-[#18181B] border border-[#27272A] pl-9 pr-4 py-2.5 text-sm text-white placeholder-[#A1A1AA] focus:border-[#6366F1] focus:outline-none transition-colors"
+                className="auth-field w-full rounded-lg bg-[#18181B] py-2 pl-9 pr-4 text-sm text-white placeholder-[#A1A1AA] transition-colors"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+            <label className="mb-1 block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
               Adresse e-mail
             </label>
             <div className="relative">
@@ -88,14 +119,16 @@ export default function RegisterPage() {
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                autoComplete="email"
+                maxLength={254}
                 required
-                className="w-full rounded-xl bg-[#18181B] border border-[#27272A] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#A1A1AA] focus:border-[#6366F1] focus:outline-none transition-colors"
+                className="auth-field w-full rounded-lg bg-[#18181B] py-2 pl-10 pr-4 text-sm text-white placeholder-[#A1A1AA] transition-colors"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+            <label className="mb-1 block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
               Mot de passe
             </label>
             <div className="relative">
@@ -104,8 +137,11 @@ export default function RegisterPage() {
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                autoComplete="new-password"
+                minLength={10}
+                maxLength={128}
                 required
-                className="w-full rounded-xl bg-[#18181B] border border-[#27272A] pl-10 pr-4 py-2.5 text-sm text-white placeholder-[#A1A1AA] focus:border-[#6366F1] focus:outline-none transition-colors"
+                className="auth-field w-full rounded-lg bg-[#18181B] py-2 pl-10 pr-4 text-sm text-white placeholder-[#A1A1AA] transition-colors"
               />
             </div>
           </div>
@@ -113,7 +149,7 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#6366F1] py-2.5 px-4 text-sm font-semibold text-white shadow-md hover:bg-[#4F46E5] focus:outline-none transition-all disabled:opacity-50 mt-6"
+            className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-[#6366F1] px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[#4F46E5] disabled:opacity-50"
           >
             {isLoading ? (
               <span className="flex items-center gap-2">
@@ -129,7 +165,7 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <p className="mt-8 text-center text-xs text-[#A1A1AA]">
+        <p className="mt-5 text-center text-xs text-[#A1A1AA]">
           Déjà inscrit ?{" "}
           <Link href="/login" className="font-medium text-[#818CF8] hover:underline">
             Se connecter

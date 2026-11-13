@@ -1,25 +1,25 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   GitBranch,
   Folder,
   FileText,
-  GitCommit,
   Clock,
   BookOpen,
   ArrowLeft,
   X,
-  Gauge,
-  Globe2,
-  Rocket,
 } from "lucide-react";
 import { RepoHeader } from "@/components/repository/RepoHeader";
 import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
+import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
+import { LoadingScreen } from "@/components/layout/LoadingScreen";
 import { CodeSnippetViewer } from "@/components/ui/CodeSnippetViewer";
-import { useAfriHubStore } from "@/lib/store";
-import { mockFileTree, mockFileContents, mockCommits } from "@/lib/mock-data";
+import { useRepository } from "@/hooks/useRepository";
+import { repositoryService } from "@/services/repository.service";
+import { formatDate } from "@/lib/utils";
+import type { Commit, FileTreeItem, Repository } from "@/types";
 
 interface PageProps {
   params: Promise<{
@@ -31,17 +31,14 @@ interface PageProps {
 export default function RepositoryCodePage({ params }: PageProps) {
   const resolvedParams = use(params);
   const { username, repository: repoName } = resolvedParams;
-  const { repositories } = useAfriHubStore();
+  const { repository: repo, isLoading, error } = useRepository(username, repoName);
 
-  const repo =
-    repositories.find(
-      (r) =>
-        r.name.toLowerCase() === repoName.toLowerCase() &&
-        r.owner.username.toLowerCase() === username.toLowerCase()
-    );
+  if (isLoading) return <LoadingScreen />;
 
   return repo ? (
-    <RepositoryCodeContent username={username} repoName={repoName} repo={repo} />
+    <RepositoryCodeContent key={repo.id} username={username} repoName={repoName} repo={repo} />
+  ) : error ? (
+    <RepositoryUnavailable message={error} />
   ) : (
     <RepositoryNotFound username={username} repository={repoName} />
   );
@@ -54,22 +51,134 @@ function RepositoryCodeContent({
 }: {
   username: string;
   repoName: string;
-  repo: import("@/types").Repository;
+  repo: Repository;
 }) {
-  const [currentBranch, setCurrentBranch] = useState("main");
-  const [currentPath, setCurrentPath] = useState("root");
-  const [selectedFile, setSelectedFile] = useState<{ path: string; name: string } | null>(null);
+  const [currentBranch, setCurrentBranch] = useState(repo.defaultBranch);
+  const [navigation, setNavigation] = useState<{
+    branch: string;
+    path: string;
+    file: { path: string; name: string } | null;
+  }>({ branch: repo.defaultBranch, path: "root", file: null });
+  const currentPath = navigation.branch === currentBranch ? navigation.path : "root";
+  const selectedFile = navigation.branch === currentBranch ? navigation.file : null;
+  const [branchesResult, setBranchesResult] = useState<{
+    repoId: string;
+    branches: string[];
+    error: string;
+  } | null>(null);
+  const [treeResult, setTreeResult] = useState<{
+    key: string;
+    items: FileTreeItem[];
+    error: string;
+  } | null>(null);
+  const [commitsResult, setCommitsResult] = useState<{
+    key: string;
+    items: Commit[];
+    error: string;
+  } | null>(null);
+  const [fileResult, setFileResult] = useState<{
+    key: string;
+    content: string | null;
+    error: string;
+  } | null>(null);
+  const [readmeResult, setReadmeResult] = useState<{
+    key: string;
+    content: string | null;
+  } | null>(null);
 
-  const fileTree = mockFileTree[currentPath] || mockFileTree["root"];
-  const repoCommits = mockCommits.filter((commit) => commit.repositoryId === repo.id);
+  const treeKey = `${repo.id}:${currentBranch}:${currentPath}`;
+  const commitsKey = `${repo.id}:${currentBranch}`;
+  const fileKey = selectedFile ? `${repo.id}:${currentBranch}:${selectedFile.path}` : "";
+  const readmeKey = `${repo.id}:${currentBranch}:README.md`;
+  const branches = branchesResult?.repoId === repo.id ? branchesResult.branches : [];
+  const branchesError = branchesResult?.repoId === repo.id ? branchesResult.error : "";
+  const branchOptions = branches.includes(repo.defaultBranch)
+    ? branches
+    : [repo.defaultBranch, ...branches];
+  const currentTreeResult = treeResult?.key === treeKey ? treeResult : null;
+  const fileTree = currentTreeResult?.items || [];
+  const currentCommitsResult = commitsResult?.key === commitsKey ? commitsResult : null;
+  const repoCommits = currentCommitsResult?.items || [];
   const latestCommit = repoCommits[0];
+  const currentFileResult = fileResult?.key === fileKey ? fileResult : null;
+  const readmeContent = readmeResult?.key === readmeKey ? readmeResult.content : null;
 
-  const handleItemClick = (item: { name: string; path: string; type: "file" | "dir" }) => {
+  useEffect(() => {
+    let active = true;
+    void repositoryService.getBranches(repo.id).then((items) => {
+      if (active) setBranchesResult({ repoId: repo.id, branches: items, error: "" });
+    }).catch(() => {
+      if (active) {
+        setBranchesResult({ repoId: repo.id, branches: [], error: "Impossible de charger les branches." });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [repo.id]);
+
+  useEffect(() => {
+    let active = true;
+    void repositoryService.getFileTree(repo.id, currentPath, currentBranch).then((items) => {
+      if (active) setTreeResult({ key: treeKey, items, error: "" });
+    }).catch(() => {
+      if (active) {
+        setTreeResult({ key: treeKey, items: [], error: "Impossible de charger cette arborescence." });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentBranch, currentPath, repo.id, treeKey]);
+
+  useEffect(() => {
+    let active = true;
+    void repositoryService.getCommits(repo.id, currentBranch).then((items) => {
+      if (active) setCommitsResult({ key: commitsKey, items, error: "" });
+    }).catch(() => {
+      if (active) setCommitsResult({ key: commitsKey, items: [], error: "Impossible de charger les commits." });
+    });
+    return () => {
+      active = false;
+    };
+  }, [commitsKey, currentBranch, repo.id]);
+
+  useEffect(() => {
+    if (!selectedFile) return;
+    let active = true;
+    void repositoryService.getFileContent(repo.id, selectedFile.path, currentBranch).then((content) => {
+      if (active) setFileResult({ key: fileKey, content, error: "" });
+    }).catch(() => {
+      if (active) {
+        setFileResult({ key: fileKey, content: null, error: "Ce fichier ne peut pas être affiché en ligne." });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentBranch, fileKey, repo.id, selectedFile]);
+
+  useEffect(() => {
+    let active = true;
+    void repositoryService.getFileContent(repo.id, "README.md", currentBranch).then((content) => {
+      if (active) setReadmeResult({ key: readmeKey, content });
+    }).catch(() => {
+      if (active) setReadmeResult({ key: readmeKey, content: null });
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentBranch, readmeKey, repo.id]);
+
+  const handleItemClick = (item: FileTreeItem) => {
     if (item.type === "dir") {
-      setCurrentPath(item.path);
-      setSelectedFile(null);
+      setNavigation({ branch: currentBranch, path: item.path, file: null });
     } else {
-      setSelectedFile({ path: item.path, name: item.name });
+      setNavigation({
+        branch: currentBranch,
+        path: currentPath,
+        file: { path: item.path, name: item.name },
+      });
     }
   };
 
@@ -82,28 +191,13 @@ function RepositoryCodeContent({
     return "text";
   };
 
-  const getFileContent = (path: string) => {
-    return (
-      mockFileContents[path] ||
-      mockFileContents[selectedFile?.name || ""] ||
-      `// Fichier : ${path}\n// Connecté au système de fichiers MetafriX Git\n\nexport default function handler() {\n  return { status: 200, message: "OK" };\n}`
-    );
+  const formatFileSize = (size: FileTreeItem["size"]) => {
+    if (typeof size === "string") return size;
+    if (typeof size !== "number") return "";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   };
-
-  if (repo.id !== "repo-afripay" || !latestCommit) {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] bg-background">
-        <RepoHeader repository={repo} />
-        <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-          <GitCommit className="mx-auto h-8 w-8 text-[#8b949e]" aria-hidden="true" />
-          <h1 className="mt-3 text-lg font-semibold text-[#e6edf3]">Fichiers non disponibles</h1>
-          <p className="mt-1 text-sm text-[#8b949e]">
-            Le navigateur de fichiers de ce dépôt n&apos;est pas encore disponible.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[#09090B]">
@@ -119,23 +213,30 @@ function RepositoryCodeContent({
                 {/* Branch selector */}
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181B] border border-[#27272A] text-zinc-200">
                   <GitBranch className="h-3.5 w-3.5 text-[#818CF8]" />
-                  <select
-                    value={currentBranch}
-                    onChange={(e) => setCurrentBranch(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-white outline-none cursor-pointer"
-                  >
-                    <option value="main" className="bg-[#18181B]">main</option>
-                    <option value="feature/wave-ci-sn" className="bg-[#18181B]">feature/wave-ci-sn</option>
-                    <option value="v2.4-release" className="bg-[#18181B]">v2.4-release</option>
-                  </select>
+                  {branches.length > 0 ? (
+                    <select
+                      value={currentBranch}
+                      onChange={(e) => setCurrentBranch(e.target.value)}
+                      className="bg-transparent text-xs font-semibold text-white outline-none cursor-pointer"
+                    >
+                      {branchOptions.map((branch) => (
+                        <option key={branch} value={branch} className="bg-[#18181B]">
+                          {branch}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-xs font-semibold text-white">
+                      {branchesError || currentBranch}
+                    </span>
+                  )}
                 </div>
 
                 {/* Path breadcrumb */}
                 {currentPath !== "root" && (
                   <button
                     onClick={() => {
-                      setCurrentPath("root");
-                      setSelectedFile(null);
+                      setNavigation({ branch: currentBranch, path: "root", file: null });
                     }}
                     className="flex items-center gap-1 text-xs text-[#818CF8] hover:underline"
                   >
@@ -154,33 +255,45 @@ function RepositoryCodeContent({
                   className="flex items-center gap-1.5 hover:text-white transition-colors"
                 >
                   <Clock className="h-3.5 w-3.5" />
-                  <span>{repoCommits.length} commits</span>
+                  <span>
+                    {currentCommitsResult
+                      ? `${repoCommits.length} commits`
+                      : "Chargement des commits…"}
+                  </span>
                 </Link>
-                <span className="hidden sm:inline">Branche principale</span>
+                <span className="hidden sm:inline">Branche {currentBranch}</span>
               </div>
             </div>
 
             {/* Latest Commit Bar */}
-            <div className="flex items-center justify-between p-3 rounded-xl bg-[#111113] border border-[#27272A] text-xs">
-              <div className="flex items-center gap-2.5 min-w-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={latestCommit.author.avatar}
-                  alt={latestCommit.author.name}
-                  className="ui-avatar h-5 w-5 shrink-0 rounded-full object-cover"
-                />
-                <span className="font-medium text-white truncate">
-                  {latestCommit.author.name}
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#111113] border border-[#27272A] text-xs">
+              {latestCommit ? (
+                <>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={latestCommit.author.avatar}
+                      alt={latestCommit.author.name}
+                      className="ui-avatar h-5 w-5 shrink-0 rounded-full object-cover"
+                    />
+                    <span className="font-medium text-white truncate">
+                      {latestCommit.author.name}
+                    </span>
+                    <span className="text-[#A1A1AA] truncate hidden sm:inline">
+                      {latestCommit.message}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-mono text-[11px] text-[#A1A1AA] shrink-0">
+                    <span className="text-[#818CF8]">{latestCommit.shortSha}</span>
+                    <span>•</span>
+                    <span>{formatDate(latestCommit.date)}</span>
+                  </div>
+                </>
+              ) : (
+                <span className="text-[#A1A1AA]">
+                  {currentCommitsResult?.error || (currentCommitsResult ? "Aucun commit sur cette branche." : "Chargement des commits…")}
                 </span>
-                <span className="text-[#A1A1AA] truncate hidden sm:inline">
-                  {latestCommit.message}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 font-mono text-[11px] text-[#A1A1AA] shrink-0">
-                <span className="text-[#818CF8]">{latestCommit.shortSha}</span>
-                <span>•</span>
-                <span>il y a 3h</span>
-              </div>
+              )}
             </div>
 
             {/* If a file is selected, show file viewer */}
@@ -194,29 +307,49 @@ function RepositoryCodeContent({
                     </span>
                   </div>
                   <button
-                    onClick={() => setSelectedFile(null)}
+                    onClick={() => setNavigation({ branch: currentBranch, path: currentPath, file: null })}
                     className="p-1 rounded hover:bg-[#18181B] text-[#A1A1AA] hover:text-white"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                <CodeSnippetViewer
-                  code={getFileContent(selectedFile.path)}
-                  language={getLanguageForFile(selectedFile.name)}
-                  filename={selectedFile.name}
-                />
+                {currentFileResult?.error ? (
+                  <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-sm text-rose-300">
+                    {currentFileResult.error}
+                  </p>
+                ) : (
+                  <CodeSnippetViewer
+                    code={currentFileResult?.content ?? "Chargement du fichier…"}
+                    language={getLanguageForFile(selectedFile.name)}
+                    filename={selectedFile.name}
+                  />
+                )}
               </div>
             ) : (
               /* File Tree Table */
               <div className="overflow-hidden rounded-xl border border-[#27272A] bg-[#111113]">
                 <table className="w-full text-left text-xs border-collapse">
                   <tbody>
-                    {fileTree.map((item) => (
+                    {!currentTreeResult ? (
+                      <tr><td colSpan={3} role="status" className="px-4 py-8 text-center text-[#A1A1AA]">Chargement de l’arborescence…</td></tr>
+                    ) : currentTreeResult.error ? (
+                      <tr><td colSpan={3} role="alert" className="px-4 py-8 text-center text-rose-300">{currentTreeResult.error}</td></tr>
+                    ) : fileTree.length === 0 ? (
+                      <tr><td colSpan={3} className="px-4 py-8 text-center text-[#A1A1AA]">Aucun fichier sur cette branche.</td></tr>
+                    ) : fileTree.map((item) => (
                       <tr
                         key={item.path}
+                        tabIndex={0}
+                        aria-label={`${item.type === "dir" ? "Ouvrir le dossier" : "Afficher le fichier"} ${item.name}`}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleItemClick(item);
+                          }
+                        }}
                         onClick={() => handleItemClick(item)}
-                        className="border-b border-[#27272A]/40 hover:bg-[#18181B] cursor-pointer transition-colors group"
+                        className="group cursor-pointer border-b border-[#27272A]/40 transition-colors hover:bg-[#18181B] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#818CF8]"
                       >
                         <td className="flex max-w-55 items-center gap-2.5 px-3.5 py-2.5">
                           {item.type === "dir" ? (
@@ -228,11 +361,11 @@ function RepositoryCodeContent({
                             {item.name}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3.5 text-[#A1A1AA] truncate hidden md:table-cell">
-                          {item.lastCommitMessage}
+                        <td className="py-2.5 px-3.5 text-[#A1A1AA] text-right hidden md:table-cell">
+                          {item.type === "file" ? formatFileSize(item.size) : ""}
                         </td>
                         <td className="py-2.5 px-3.5 text-right text-zinc-500 font-mono text-[11px] whitespace-nowrap">
-                          {item.lastCommitDate}
+                          {item.type === "dir" ? "Dossier" : "Fichier"}
                         </td>
                       </tr>
                     ))}
@@ -241,53 +374,24 @@ function RepositoryCodeContent({
               </div>
             )}
 
-            {/* Interactive README Rendered Box */}
+            {/* README content is displayed as text, never injected as HTML. */}
             <div className="rounded-xl border border-[#27272A] bg-[#111113] overflow-hidden mt-6">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-[#27272A] bg-[#18181B]/50 text-xs font-semibold text-white">
                 <BookOpen className="h-4 w-4 text-[#818CF8]" />
                 <span>README.md</span>
               </div>
-              <div className="p-6 text-sm text-zinc-200 space-y-4 leading-relaxed prose prose-invert max-w-none">
-                <h1 className="text-2xl font-bold text-white border-b border-[#27272A] pb-2">
-                  <span className="inline-flex items-center gap-2">
-                    <Globe2 className="h-5 w-5 text-[#818CF8]" aria-hidden="true" />
-                    {repo.name}
-                  </span>
-                </h1>
-                <p className="text-[#A1A1AA]">{repo.description}</p>
-                <div className="flex gap-2 py-2">
-                  <span className="px-2 py-0.5 rounded bg-[#6366F1]/20 text-[#818CF8] text-xs font-mono border border-[#6366F1]/30">
-                    MetafriX CI Passing
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-xs font-mono border border-emerald-500/30">
-                    v2.4.0
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-mono border border-amber-500/30">
-                    MIT License
-                  </span>
-                </div>
-
-                <h3 className="text-base font-semibold text-white pt-2">
-                  <span className="inline-flex items-center gap-2">
-                    <Gauge className="h-4 w-4 text-[#818CF8]" aria-hidden="true" />
-                    Caractéristiques principales
-                  </span>
-                </h3>
-                <ul className="list-disc pl-5 space-y-1 text-xs text-[#A1A1AA]">
-                  <li>Intégration directe M-Pesa, Wave, Orange Money et MTN MoMo.</li>
-                  <li>Architecture résiliente et gestion d&apos;idempotence native.</li>
-                  <li>Documentation complète et SDK TypeScript précompilé.</li>
-                </ul>
-
-                <h3 className="text-base font-semibold text-white pt-2">
-                  <span className="inline-flex items-center gap-2">
-                    <Rocket className="h-4 w-4 text-[#818CF8]" aria-hidden="true" />
-                    Installation rapide
-                  </span>
-                </h3>
-                <div className="rounded-lg bg-[#09090B] border border-[#27272A] p-3 font-mono text-xs text-emerald-400">
-                  npm install @metafrix/afri-pay
-                </div>
+              <div className="p-5 text-sm text-zinc-200">
+                {readmeContent === null ? (
+                  <p className="text-[#A1A1AA]">
+                    {readmeResult?.key === readmeKey
+                      ? "Ce dépôt ne contient pas de README.md."
+                      : "Chargement du README…"}
+                  </p>
+                ) : (
+                  <pre className="overflow-x-auto whitespace-pre-wrap wrap-break-word font-mono text-xs leading-relaxed text-zinc-300">
+                    {readmeContent}
+                  </pre>
+                )}
               </div>
             </div>
           </div>
@@ -317,7 +421,7 @@ function RepositoryCodeContent({
               <div className="space-y-2.5 pt-3 border-t border-[#27272A] text-xs text-[#A1A1AA]">
                 <div className="flex items-center justify-between">
                   <span>Licence</span>
-                  <span className="font-semibold text-white">{repo.license || "MIT"}</span>
+                  <span className="font-semibold text-white">{repo.license || "Non spécifiée"}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Taille du dépôt</span>
@@ -325,14 +429,14 @@ function RepositoryCodeContent({
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Dernière activité</span>
-                  <span className="text-zinc-300">hier</span>
+                  <span className="text-zinc-300">{formatDate(repo.updatedAt)}</span>
                 </div>
               </div>
             </div>
 
             {/* Contributors */}
             <div className="p-5 rounded-2xl bg-[#111113] border border-[#27272A] space-y-3">
-              <h3 className="text-sm font-semibold text-white">Contributeurs (4)</h3>
+              <h3 className="text-sm font-semibold text-white">Propriétaire</h3>
               <div className="flex items-center -space-x-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -340,52 +444,23 @@ function RepositoryCodeContent({
                   alt={repo.owner.name}
                   className="ui-avatar h-8 w-8 rounded-full border-2 border-[#111113] object-cover"
                 />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80"
-                  alt="Amara"
-                  className="ui-avatar h-8 w-8 rounded-full border-2 border-[#111113] object-cover"
-                />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=150&auto=format&fit=crop&q=80"
-                  alt="Fatou"
-                  className="ui-avatar h-8 w-8 rounded-full border-2 border-[#111113] object-cover"
-                />
               </div>
             </div>
 
             {/* Languages breakdown */}
             <div className="p-5 rounded-2xl bg-[#111113] border border-[#27272A] space-y-3">
-              <h3 className="text-sm font-semibold text-white">Langages</h3>
-              <div className="h-2 w-full rounded-full overflow-hidden flex bg-[#18181B]">
-                <div className="h-full bg-[#3178c6]" style={{ width: "88%" }} />
-                <div className="h-full bg-[#3572A5]" style={{ width: "9%" }} />
-                <div className="h-full bg-emerald-500" style={{ width: "3%" }} />
-              </div>
-              <div className="space-y-1 text-xs text-[#A1A1AA] pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-[#3178c6]" />
-                    TypeScript
-                  </span>
-                  <span>88.0%</span>
+              <h3 className="text-sm font-semibold text-white">Langage principal</h3>
+              {repo.language ? (
+                <div className="flex items-center gap-2 text-xs text-[#A1A1AA]">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full bg-[#818CF8]"
+                    style={repo.languageColor ? { backgroundColor: repo.languageColor } : undefined}
+                  />
+                  {repo.language}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-[#3572A5]" />
-                    Python
-                  </span>
-                  <span>9.2%</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    Shell
-                  </span>
-                  <span>2.8%</span>
-                </div>
-              </div>
+              ) : (
+                <p className="text-xs text-[#A1A1AA]">Langage non renseigné.</p>
+              )}
             </div>
           </div>
         </div>

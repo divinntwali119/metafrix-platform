@@ -2,14 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, FolderGit2, User, CheckCircle2, ArrowRight, MessageSquare } from "lucide-react";
+import { Search, X, FolderGit2, User, CheckCircle2, ArrowRight, MessageSquare, LoaderCircle } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { repositoryService } from "@/services/repository.service";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
+import type { Post, Repository, User as Developer } from "@/types";
+
+interface ApiSearchResults {
+  query: string;
+  repositories: Repository[];
+  users: Developer[];
+  posts: Post[];
+  error: string | null;
+}
 
 export function SearchModal() {
   const router = useRouter();
   const { isSearchOpen, setIsSearchOpen, repositories, users, posts, issues } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [query, setQuery] = useState("");
+  const [apiResults, setApiResults] = useState<ApiSearchResults | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Keyboard shortcut listener for Ctrl+K / Cmd+K
@@ -31,31 +45,82 @@ export function SearchModal() {
     if (isSearchOpen) searchInputRef.current?.focus();
   }, [isSearchOpen]);
 
+  useEffect(() => {
+    if (!isSearchOpen || isDemoMode) return;
+    const searchQuery = query.trim();
+    let active = true;
+    const timeoutId = window.setTimeout(() => {
+      void Promise.allSettled([
+        repositoryService.getRepositories({ search: searchQuery || undefined, page_size: 4 }),
+        socialService.getDevelopers({ search: searchQuery || undefined, page_size: 4 }),
+        searchQuery
+          ? socialService.getPosts({ search: searchQuery, page_size: 4 })
+          : Promise.resolve({ count: 0, next: null, previous: null, results: [] as Post[] }),
+      ]).then(([repositoryResult, developerResult, postResult]) => {
+        if (!active) return;
+        const failures = [repositoryResult, developerResult, postResult].filter(
+          (result) => result.status === "rejected",
+        );
+        const requestCount = searchQuery ? 3 : 2;
+        if (failures.length === requestCount) {
+          setApiResults({
+            query: searchQuery,
+            repositories: [],
+            users: [],
+            posts: [],
+            error: getApiErrorMessage(failures[0].reason, "La recherche est momentanément indisponible."),
+          });
+          return;
+        }
+        setApiResults({
+          query: searchQuery,
+          repositories: repositoryResult.status === "fulfilled" ? repositoryResult.value : [],
+          users: developerResult.status === "fulfilled" ? developerResult.value.results : [],
+          posts: postResult.status === "fulfilled" ? postResult.value.results : [],
+          error: failures.length > 0 ? "Certains résultats n’ont pas pu être chargés." : null,
+        });
+      });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isDemoMode, isSearchOpen, query]);
+
   if (!isSearchOpen) return null;
 
-  const filteredRepos = query.trim()
-    ? repositories.filter(
+  const currentApiResults = apiResults?.query === query.trim() ? apiResults : null;
+  const isApiLoading = !isDemoMode && currentApiResults === null;
+  const filteredRepos = isDemoMode
+    ? query.trim()
+      ? repositories.filter(
         (r) =>
           r.name.toLowerCase().includes(query.toLowerCase()) ||
-          r.description.toLowerCase().includes(query.toLowerCase()) ||
+          (r.description || "").toLowerCase().includes(query.toLowerCase()) ||
           r.language.toLowerCase().includes(query.toLowerCase())
       )
-    : repositories.slice(0, 3);
+      : repositories.slice(0, 3)
+    : currentApiResults?.repositories ?? [];
 
-  const filteredUsers = query.trim()
-    ? users.filter(
+  const filteredUsers = isDemoMode
+    ? query.trim()
+      ? users.filter(
         (u) =>
           u.name.toLowerCase().includes(query.toLowerCase()) ||
           u.username.toLowerCase().includes(query.toLowerCase()) ||
           u.skills.some((s) => s.toLowerCase().includes(query.toLowerCase()))
       )
-    : users.slice(0, 3);
+      : users.slice(0, 3)
+    : currentApiResults?.users ?? [];
 
-  const filteredPosts = query.trim()
-    ? posts.filter((p) => p.content.toLowerCase().includes(query.toLowerCase()))
-    : [];
+  const filteredPosts = isDemoMode
+    ? query.trim()
+      ? posts.filter((p) => p.content.toLowerCase().includes(query.toLowerCase()))
+      : []
+    : currentApiResults?.posts ?? [];
 
-  const filteredIssues = query.trim()
+  const filteredIssues = isDemoMode && query.trim()
     ? issues.filter(
         (issue) =>
           issue.title.toLowerCase().includes(query.toLowerCase()) ||
@@ -123,8 +188,8 @@ export function SearchModal() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            aria-label="Rechercher des dépôts, développeurs, publications ou issues"
-            placeholder="Rechercher des dépôts, développeurs, code, discussions..."
+            aria-label="Rechercher des dépôts, développeurs ou publications"
+            placeholder="Rechercher des dépôts, développeurs, publications..."
             className="w-full bg-transparent text-sm text-white placeholder-[#A1A1AA] outline-none"
           />
           {query && (
@@ -145,6 +210,19 @@ export function SearchModal() {
 
         {/* Results Area */}
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-6">
+          {isApiLoading && (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#8b949e]" role="status">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Recherche en cours…
+            </div>
+          )}
+
+          {currentApiResults?.error && (
+            <div className="py-8 text-center text-sm text-[#f85149]" role="alert">
+              {currentApiResults.error}
+            </div>
+          )}
+
           {/* Repositories */}
           {filteredRepos.length > 0 && (
             <div>
@@ -265,9 +343,15 @@ export function SearchModal() {
             </div>
           )}
 
-          {query.trim() && !hasResults && (
+          {query.trim() && !isApiLoading && !currentApiResults?.error && !hasResults && (
             <div className="py-8 text-center text-sm text-[#A1A1AA]">
               Aucun résultat trouvé pour &quot;{query}&quot;
+            </div>
+          )}
+
+          {!query.trim() && !isApiLoading && !hasResults && !currentApiResults?.error && (
+            <div className="py-8 text-center text-sm text-[#A1A1AA]">
+              Saisissez un nom, un langage ou un mot-clé pour rechercher.
             </div>
           )}
         </div>

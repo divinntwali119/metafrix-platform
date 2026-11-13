@@ -44,6 +44,8 @@ const applyTheme = (theme: "dark" | "light") => {
 interface AfriHubState {
   hasHydrated: boolean;
   setHasHydrated: (hasHydrated: boolean) => void;
+  authLoading: boolean;
+  setAuthLoading: (authLoading: boolean) => void;
 
   theme: "dark" | "light";
   setTheme: (theme: "dark" | "light") => void;
@@ -52,12 +54,14 @@ interface AfriHubState {
   // Auth
   currentUser: User;
   isAuthenticated: boolean;
-  login: (email: string) => void;
+  login: (user: User) => void;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => void;
 
   // Repositories
   repositories: Repository[];
+  replaceRepositories: (repositories: Repository[]) => void;
+  upsertRepository: (repository: Repository) => void;
   addRepository: (repo: Omit<Repository, "id" | "owner" | "createdAt" | "updatedAt" | "starsCount" | "forksCount" | "watchersCount" | "issuesCount" | "pullsCount">) => Repository;
   toggleStarRepo: (repoId: string) => void;
   deleteRepository: (repoId: string) => void;
@@ -118,11 +122,37 @@ interface AfriHubState {
   setIsSearchOpen: (open: boolean) => void;
 }
 
+const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+const initialComments: AfriHubState["comments"] = demoMode
+  ? {
+      "post-1": [
+        {
+          id: "c-1",
+          author: mockUsers[1],
+          content: "Superbe avancée ! La doc est hyper claire. Hâte de tester avec le SDK Python.",
+          createdAt: "2026-11-03T09:30:00Z",
+          likesCount: 5,
+          isLiked: false,
+        },
+        {
+          id: "c-2",
+          author: mockUsers[3],
+          content: "Le composant QR code est fluide sur mobile ! Excellent travail !",
+          createdAt: "2026-11-03T09:45:00Z",
+          likesCount: 3,
+          isLiked: true,
+        },
+      ],
+    }
+  : {};
+
 export const useAfriHubStore = create<AfriHubState>()(
   persist(
     (set, get) => ({
       hasHydrated: false,
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
+      authLoading: true,
+      setAuthLoading: (authLoading) => set({ authLoading }),
 
       theme: "dark",
       setTheme: (theme) => {
@@ -135,23 +165,38 @@ export const useAfriHubStore = create<AfriHubState>()(
       },
 
       currentUser: initialCurrentUser,
-      isAuthenticated: true,
-      login: (email: string) => {
-        set({
-          isAuthenticated: true,
-          currentUser: {
-            ...get().currentUser,
-            email,
-          },
-        });
-      },
-      logout: () => set({ isAuthenticated: false }),
+      isAuthenticated: false,
+      login: (user) => set({ isAuthenticated: true, currentUser: user, authLoading: false }),
+      logout: () => set({
+        isAuthenticated: false,
+        currentUser: initialCurrentUser,
+        authLoading: false,
+        repositories: demoMode ? mockRepositories : [],
+      }),
       updateProfile: (updates) =>
         set((state) => ({
           currentUser: { ...state.currentUser, ...updates },
         })),
 
-      repositories: mockRepositories,
+      repositories: demoMode ? mockRepositories : [],
+      replaceRepositories: (repositories) => set({ repositories }),
+      upsertRepository: (repository) =>
+        set((state) => ({
+          repositories: [
+            repository,
+            ...state.repositories.filter((existing) => existing.id !== repository.id),
+          ],
+          currentUser:
+            repository.owner.id === state.currentUser.id
+              ? {
+                  ...state.currentUser,
+                  repositoriesCount: Math.max(
+                    state.currentUser.repositoriesCount,
+                    state.repositories.filter((item) => item.owner.id === state.currentUser.id).length + 1,
+                  ),
+                }
+              : state.currentUser,
+        })),
       addRepository: (repoData) => {
         const newRepo: Repository = {
           ...repoData,
@@ -180,7 +225,8 @@ export const useAfriHubStore = create<AfriHubState>()(
             r.id === repoId
               ? {
                   ...r,
-                  starsCount: r.starsCount + 1,
+                  isStarred: !r.isStarred,
+                  starsCount: Math.max(0, r.starsCount + (r.isStarred ? -1 : 1)),
                 }
               : r
           ),
@@ -194,7 +240,7 @@ export const useAfriHubStore = create<AfriHubState>()(
           },
         })),
 
-      posts: mockPosts,
+      posts: demoMode ? mockPosts : [],
       addPost: (postData) => {
         const newPost: Post = {
           id: `post-${Date.now()}`,
@@ -236,26 +282,7 @@ export const useAfriHubStore = create<AfriHubState>()(
           posts: state.posts.filter((p) => p.id !== postId),
         })),
 
-      comments: {
-        "post-1": [
-          {
-            id: "c-1",
-            author: mockUsers[1],
-            content: "Superbe avancée ! La doc est hyper claire. Hâte de tester avec le SDK Python.",
-            createdAt: "2026-11-03T09:30:00Z",
-            likesCount: 5,
-            isLiked: false,
-          },
-          {
-            id: "c-2",
-            author: mockUsers[3],
-            content: "Le composant QR code est fluide sur mobile ! Excellent travail !",
-            createdAt: "2026-11-03T09:45:00Z",
-            likesCount: 3,
-            isLiked: true,
-          },
-        ],
-      },
+      comments: initialComments,
       addComment: (postId, content) => {
         const newComment = {
           id: `comment-${Date.now()}`,
@@ -276,7 +303,7 @@ export const useAfriHubStore = create<AfriHubState>()(
         }));
       },
 
-      users: mockUsers,
+      users: demoMode ? mockUsers : [],
       toggleFollowUser: (userId) =>
         set((state) => {
           const user = state.users.find((u) => u.id === userId);
@@ -301,9 +328,9 @@ export const useAfriHubStore = create<AfriHubState>()(
           };
         }),
 
-      conversations: mockConversations,
-      messages: mockMessages,
-      activeConversationId: "conv-1",
+      conversations: demoMode ? mockConversations : [],
+      messages: demoMode ? mockMessages : {},
+      activeConversationId: demoMode ? "conv-1" : null,
       setActiveConversationId: (id) => set({ activeConversationId: id }),
       sendMessage: (conversationId, content, type = "text", codeSnippet) => {
         const newMsg: Message = {
@@ -334,7 +361,7 @@ export const useAfriHubStore = create<AfriHubState>()(
         }));
       },
 
-      notifications: mockNotifications,
+      notifications: demoMode ? mockNotifications : [],
       markNotificationAsRead: (id) =>
         set((state) => ({
           notifications: state.notifications.map((n) =>
@@ -350,7 +377,7 @@ export const useAfriHubStore = create<AfriHubState>()(
           notifications: state.notifications.filter((n) => n.id !== id),
         })),
 
-      issues: mockIssues,
+      issues: demoMode ? mockIssues : [],
       addIssue: (issueData) => {
         const newIssue: Issue = {
           id: `issue-${Date.now()}`,
@@ -369,7 +396,7 @@ export const useAfriHubStore = create<AfriHubState>()(
         set((state) => ({ issues: [newIssue, ...state.issues] }));
       },
 
-      pullRequests: mockPullRequests,
+      pullRequests: demoMode ? mockPullRequests : [],
       addPullRequest: (prData) => {
         const newPR: PullRequest = {
           id: `pr-${Date.now()}`,
@@ -390,7 +417,7 @@ export const useAfriHubStore = create<AfriHubState>()(
         set((state) => ({ pullRequests: [newPR, ...state.pullRequests] }));
       },
 
-      organizations: mockOrganizations,
+      organizations: demoMode ? mockOrganizations : [],
       addOrganization: (organizationData) => {
         const organization: Organization = {
           ...organizationData,
@@ -438,11 +465,7 @@ export const useAfriHubStore = create<AfriHubState>()(
       },
       partialize: (state) => ({
         theme: state.theme,
-        currentUser: state.currentUser,
-        repositories: state.repositories,
-        organizations: state.organizations,
         preferences: state.preferences,
-        version: 0,
       }),
     }
   )

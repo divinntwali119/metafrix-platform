@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Compass,
@@ -20,12 +20,88 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { FeaturedRepositoriesCarousel } from "@/components/social/FeaturedRepositoriesCarousel";
 import { FeaturedRepositoriesSkeleton } from "@/components/ui/Skeleton";
 import { PlatformAnnouncements } from "@/components/social/PlatformAnnouncements";
+import { socialService } from "@/services/social.service";
+import { repositoryService } from "@/services/repository.service";
+import { getApiErrorMessage } from "@/lib/api-error";
+import type { Post, Repository, User } from "@/types";
 
 type FeedFilter = "all" | "following" | "project" | "tutorial" | "question" | "code";
 
 export default function FeedPage() {
-  const { posts, users, repositories, currentUser, toggleFollowUser, hasHydrated } = useAfriHubStore();
+  const {
+    posts,
+    users,
+    repositories,
+    currentUser,
+    isAuthenticated,
+    authLoading,
+    toggleFollowUser,
+    updateProfile,
+    hasHydrated,
+  } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [activeFilter, setActiveFilter] = useState<FeedFilter>("all");
+  const [apiPosts, setApiPosts] = useState<Post[]>([]);
+  const [apiUsers, setApiUsers] = useState<User[]>([]);
+  const [apiRepositories, setApiRepositories] = useState<Repository[]>([]);
+  const [loadedFeedKey, setLoadedFeedKey] = useState("");
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextPage, setNextPage] = useState(2);
+  const [isFollowingAction, setIsFollowingAction] = useState(false);
+  const [apiError, setApiError] = useState("");
+  const feedQueryKey = `${activeFilter}:${isAuthenticated ? currentUser.id : "anonymous"}`;
+  const requiresFollowingAuth = !isDemoMode && activeFilter === "following" && !isAuthenticated && !authLoading;
+  const isLoadingPosts = !isDemoMode && (authLoading || (!requiresFollowingAuth && loadedFeedKey !== feedQueryKey));
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    let active = true;
+    if (authLoading) return () => { active = false; };
+
+    if (activeFilter === "following" && !isAuthenticated) {
+      return () => { active = false; };
+    }
+
+    const params: Record<string, string | number | undefined> = { page: 1 };
+    if (["project", "tutorial", "question", "code"].includes(activeFilter)) {
+      params.type = activeFilter;
+    }
+    if (activeFilter === "following") params.following = "true";
+
+    void socialService.getPosts(params)
+      .then((response) => {
+        if (!active) return;
+        setApiPosts(response.results);
+        setHasMore(Boolean(response.next));
+        setNextPage(2);
+        setLoadedFeedKey(feedQueryKey);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setApiError(getApiErrorMessage(error, "Le fil n’a pas pu être chargé."));
+          setLoadedFeedKey(feedQueryKey);
+        }
+      });
+
+    return () => { active = false; };
+  }, [activeFilter, authLoading, feedQueryKey, isAuthenticated, isDemoMode]);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    let active = true;
+    void Promise.all([
+      socialService.getDevelopers({ page_size: 12 }),
+      repositoryService.getRepositories(),
+    ]).then(([developers, featured]) => {
+      if (!active) return;
+      setApiUsers(developers.results.filter((user) => user.id !== currentUser.id).slice(0, 4));
+      setApiRepositories(featured.filter((repository) => !repository.isPrivate));
+    }).catch(() => {
+      // The feed itself remains available if one of the optional side panels fails.
+    });
+    return () => { active = false; };
+  }, [currentUser.id, isDemoMode]);
 
   const filteredPosts = posts.filter((post) => {
     if (activeFilter === "all") return true;
@@ -35,6 +111,68 @@ export default function FeedPage() {
     }
     return post.type === activeFilter;
   });
+  const displayedPosts = isDemoMode ? filteredPosts : requiresFollowingAuth ? [] : apiPosts;
+  const visibleApiError = requiresFollowingAuth
+    ? "Connectez-vous pour consulter les publications des personnes que vous suivez."
+    : apiError;
+  const suggestedUsers = isDemoMode
+    ? users.filter((u) => u.id !== currentUser.id).slice(0, 4)
+    : apiUsers;
+
+  const handleFollow = async (user: User) => {
+    setApiError("");
+    if (isDemoMode) {
+      toggleFollowUser(user.id);
+      return;
+    }
+    if (!isAuthenticated) {
+      setApiError("Connectez-vous pour suivre un développeur.");
+      return;
+    }
+    setIsFollowingAction(true);
+    try {
+      const result = await socialService.setFollowed(user.username, !user.isFollowed);
+      const change = result.isFollowed === Boolean(user.isFollowed) ? 0 : result.isFollowed ? 1 : -1;
+      setApiUsers((items) => items.map((item) => item.id === user.id
+        ? { ...item, isFollowed: result.isFollowed, followersCount: result.followersCount }
+        : item));
+      if (change) updateProfile({ followingCount: Math.max(0, currentUser.followingCount + change) });
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "La demande de suivi a échoué."));
+    } finally {
+      setIsFollowingAction(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (isDemoMode || isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const params: Record<string, string | number | undefined> = { page: nextPage };
+      if (["project", "tutorial", "question", "code"].includes(activeFilter)) params.type = activeFilter;
+      if (activeFilter === "following") params.following = "true";
+      const response = await socialService.getPosts(params);
+      setApiPosts((items) => [...items, ...response.results]);
+      setHasMore(Boolean(response.next));
+      setNextPage((page) => page + 1);
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "Impossible de charger la suite du fil."));
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handlePostUpdate = (updatedPost: Post) => {
+    setApiPosts((items) => isDemoMode
+      ? items.map((item) => item.id === updatedPost.id ? updatedPost : item)
+      : items.map((item) => item.id === updatedPost.id
+        ? { ...item, isLiked: updatedPost.isLiked, likesCount: updatedPost.likesCount, isBookmarked: updatedPost.isBookmarked, commentsCount: updatedPost.commentsCount }
+        : item));
+  };
+
+  const handlePostDelete = (postId: string) => {
+    setApiPosts((items) => items.filter((item) => item.id !== postId));
+  };
 
   const filterTabs: { id: FeedFilter; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "all", label: "Pour vous", icon: Home },
@@ -44,8 +182,6 @@ export default function FeedPage() {
     { id: "question", label: "Questions", icon: HelpCircle },
     { id: "code", label: "Extraits de code", icon: MessageSquare },
   ];
-
-  const suggestedUsers = users.filter((u) => u.id !== currentUser.id).slice(0, 4);
 
   const trendingTopics = [
     { tag: "#MobileMoney", postsCount: "142 posts" },
@@ -72,14 +208,20 @@ export default function FeedPage() {
           </div>
 
           {/* Post Creator */}
-          <CreatePostCard />
+          {isDemoMode || isAuthenticated ? (
+            <CreatePostCard onCreated={(post) => setApiPosts((items) => [post, ...items])} />
+          ) : !authLoading ? (
+            <div className="ui-panel px-4 py-4 text-sm text-(--secondary-text)">
+              <Link href="/login" className="font-semibold text-(--accent) hover:underline">Connectez-vous</Link> pour partager une publication.
+            </div>
+          ) : null}
 
           {/* Featured repositories */}
           {!hasHydrated ? (
             <FeaturedRepositoriesSkeleton />
           ) : (
             <FeaturedRepositoriesCarousel
-              repositories={repositories
+              repositories={(isDemoMode ? repositories : apiRepositories)
                 .filter((repository) => !repository.isPrivate)
                 .sort((a, b) => b.starsCount - a.starsCount)}
             />
@@ -93,7 +235,10 @@ export default function FeedPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveFilter(tab.id)}
+                  onClick={() => {
+                    setApiError("");
+                    setActiveFilter(tab.id);
+                  }}
                   className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-1 py-3 text-xs font-medium whitespace-nowrap transition-colors ${
                     isActive
                       ? "border-[#2f81f7] text-[#e6edf3]"
@@ -109,14 +254,21 @@ export default function FeedPage() {
 
           {/* Post Feed List */}
           <div className="space-y-4">
-            {!hasHydrated ? (
+            {(isDemoMode ? !hasHydrated : isLoadingPosts) ? (
               <div role="status" aria-label="Chargement des publications" aria-busy="true" className="space-y-4">
                 <PostCardSkeleton />
                 <PostCardSkeleton />
                 <span className="sr-only">Chargement des publications…</span>
               </div>
-            ) : filteredPosts.length > 0 ? (
-              filteredPosts.map((post) => <PostCard key={post.id} post={post} />)
+            ) : displayedPosts.length > 0 ? (
+              displayedPosts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  onUpdate={isDemoMode ? undefined : handlePostUpdate}
+                  onDelete={isDemoMode ? undefined : handlePostDelete}
+                />
+              ))
             ) : (
               <EmptyState
                 icon={<Compass className="h-5 w-5" />}
@@ -124,13 +276,24 @@ export default function FeedPage() {
                 description="Soyez le premier à publier dans cette catégorie !"
               />
             )}
+            {visibleApiError && <p className="rounded-lg border border-[#f85149]/30 bg-[#f85149]/10 px-3 py-2 text-xs text-[#f85149]" role="alert">{visibleApiError}</p>}
+            {!isDemoMode && hasMore && (
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={isLoadingMore}
+                className="w-full rounded-lg border border-[#30363d] px-4 py-2.5 text-sm text-[#c9d1d9] transition-colors hover:bg-[#21262d] disabled:opacity-60"
+              >
+                {isLoadingMore ? "Chargement…" : "Afficher plus"}
+              </button>
+            )}
           </div>
         </div>
 
         {/* Sidebar: Trending & Suggestions */}
         <aside className="hidden space-y-6 lg:sticky lg:top-32 lg:block lg:self-start">
           {/* Trending Topics */}
-          <div className="ui-panel space-y-4 p-5">
+          {isDemoMode && <div className="ui-panel space-y-4 p-5">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-[#8b949e]" />
               <h3 className="text-sm font-semibold text-[#e6edf3]">Tendances techniques</h3>
@@ -149,7 +312,7 @@ export default function FeedPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Suggested Developers */}
           <div className="ui-panel space-y-4 p-5">
@@ -193,7 +356,8 @@ export default function FeedPage() {
                   </Link>
 
                   <button
-                    onClick={() => toggleFollowUser(user.id)}
+                    onClick={() => void handleFollow(user)}
+                    disabled={isFollowingAction || (!isDemoMode && !isAuthenticated)}
                     className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
                       user.isFollowed
                         ? "border-[#30363d] bg-[#21262d] text-[#c9d1d9] hover:border-[#f85149] hover:text-[#f85149]"

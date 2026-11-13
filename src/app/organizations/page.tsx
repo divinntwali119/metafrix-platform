@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -14,18 +14,92 @@ import {
   X,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
+import type { Organization } from "@/types";
 
 type OrganizationFilter = "all" | "mine";
 type OrganizationSort = "recent" | "name";
 
 export default function OrganizationsPage() {
-  const { organizations, currentUser } = useAfriHubStore();
+  const { organizations, currentUser, isAuthenticated, authLoading } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<OrganizationFilter>("all");
   const [sort, setSort] = useState<OrganizationSort>("recent");
+  const [apiOrganizations, setApiOrganizations] = useState<Organization[]>([]);
+  const [resultCount, setResultCount] = useState(0);
+  const [loadedQueryKey, setLoadedQueryKey] = useState("");
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [requestError, setRequestError] = useState<{ key: string; message: string } | null>(null);
   const normalizedSearch = search.trim().toLocaleLowerCase();
+  const queryKey = `${normalizedSearch}|${filter}|${sort}|${isAuthenticated ? currentUser.id : "anonymous"}`;
+  const requiresMineAuth = !isDemoMode && filter === "mine" && !isAuthenticated && !authLoading;
+  const isLoading = !isDemoMode && (authLoading || (!requiresMineAuth && loadedQueryKey !== queryKey));
+  const apiError = requiresMineAuth
+    ? "Connectez-vous pour afficher vos organisations."
+    : requestError?.key === queryKey ? requestError.message : "";
 
-  const filteredOrganizations = organizations
+  useEffect(() => {
+    if (isDemoMode) return;
+    let active = true;
+    if (authLoading) return () => { active = false; };
+    const timer = window.setTimeout(() => {
+      if (filter === "mine" && !isAuthenticated) {
+        return;
+      }
+      void socialService.getOrganizations({
+        search: search.trim() || undefined,
+        mine: filter === "mine" || undefined,
+        sort,
+        page: 1,
+        page_size: 24,
+      }).then((response) => {
+        if (!active) return;
+        setApiOrganizations(response.results);
+        setResultCount(response.count);
+        setHasMore(Boolean(response.next));
+        setPage(1);
+        setLoadedQueryKey(queryKey);
+      }).catch((error: unknown) => {
+        if (active) {
+          setRequestError({ key: queryKey, message: getApiErrorMessage(error, "Les organisations n’ont pas pu être chargées.") });
+          setLoadedQueryKey(queryKey);
+        }
+      });
+    }, 200);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [authLoading, filter, isAuthenticated, isDemoMode, search, sort, queryKey]);
+
+  const loadMore = async () => {
+    if (isDemoMode || isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await socialService.getOrganizations({
+        search: search.trim() || undefined,
+        mine: filter === "mine" || undefined,
+        sort,
+        page: page + 1,
+        page_size: 24,
+      });
+      setApiOrganizations((items) => [...items, ...response.results]);
+      setHasMore(Boolean(response.next));
+      setPage((current) => current + 1);
+    } catch (error) {
+      setRequestError({ key: queryKey, message: getApiErrorMessage(error, "Impossible de charger d’autres organisations.") });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const sourceOrganizations = isDemoMode ? organizations : apiOrganizations;
+
+  const filteredOrganizations = sourceOrganizations
     .filter((organization) => {
       const matchesSearch =
         !normalizedSearch ||
@@ -35,9 +109,9 @@ export default function OrganizationsPage() {
           organization.description,
           organization.location || "",
         ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch));
-      const isMember = organization.members.some(
-        ({ user }) => user.id === currentUser.id
-      );
+      const isMember = isDemoMode
+        ? organization.members?.some(({ user }) => user.id === currentUser.id)
+        : organization.isMember;
 
       return matchesSearch && (filter === "all" || isMember);
     })
@@ -148,13 +222,19 @@ export default function OrganizationsPage() {
 
           <p className="text-xs text-(--secondary-text)" role="status" aria-live="polite">
             <span className="font-semibold text-(--primary-text)">
-              {filteredOrganizations.length}
+              {isDemoMode ? filteredOrganizations.length : resultCount}
             </span>{" "}
             {filteredOrganizations.length === 1 ? "organisation" : "organisations"}
           </p>
         </section>
 
-        {filteredOrganizations.length > 0 ? (
+        {!isDemoMode && isLoading ? (
+          <div className="space-y-3" role="status" aria-busy="true">
+            <div className="h-28 animate-pulse rounded-xl bg-(--muted)" />
+            <div className="h-28 animate-pulse rounded-xl bg-(--muted)" />
+            <span className="sr-only">Chargement des organisations…</span>
+          </div>
+        ) : filteredOrganizations.length > 0 ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
             {filteredOrganizations.map((organization) => (
               <Link
@@ -234,6 +314,17 @@ export default function OrganizationsPage() {
               </button>
             )}
           </div>
+        )}
+        {apiError && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">{apiError}</p>}
+        {!isDemoMode && hasMore && (
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={isLoadingMore}
+            className="w-full rounded-lg border border-(--border) px-4 py-2.5 text-sm text-(--primary-text) hover:bg-(--muted) disabled:opacity-60"
+          >
+            {isLoadingMore ? "Chargement…" : "Afficher plus d’organisations"}
+          </button>
         )}
       </div>
     </div>

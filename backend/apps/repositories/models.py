@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 
 # Repo model
@@ -8,24 +9,39 @@ class Repository(models.Model):
         PRIVATE = 'private', "Privée"
         
     name = models.CharField(max_length=120)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='repositories',
+    )
     access = models.CharField(max_length=20, choices=Access.choices)
     description = models.TextField(blank=True, null=True)
+    language = models.CharField(max_length=60, blank=True, default='')
+    language_color = models.CharField(max_length=7, blank=True, default='')
+    topics = models.JSONField(default=list, blank=True)
+    size_bytes = models.PositiveBigIntegerField(default=0)
     archived = models.BooleanField(default=False)
     license_template = models.CharField(max_length=50, null=True, blank=True,)
     gitignore_template = models.CharField(max_length=60, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         verbose_name = "Dépôt"
         ordering = ['-updated_at', '-created_at']
         constraints = [
-            models.UniqueConstraint(fields=['name'], name='unique_name_per_repository')
+            models.UniqueConstraint(fields=['owner', 'name'], name='unique_repository_name_per_owner')
         ]    
         
     def __str__(self) -> str:
         return f"{self.owner}/{self.name}"
+
+    @property
+    def default_branch(self) -> str:
+        try:
+            return self.settings.default_branch
+        except RepositorySettings.DoesNotExist:
+            return "main"
     
 # Repositories settings
 class RepositorySettings(models.Model):
@@ -66,18 +82,21 @@ class Issue(models.Model):
     repo = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name='issues')
     title = models.CharField(max_length=100)
     description = models.TextField()
-    labels = models.CharField(max_length=150)
-    type = models.CharField(max_length=20, choices=Type.choices)
+    labels = models.JSONField(default=list, blank=True)
+    type = models.CharField(max_length=20, choices=Type.choices, default=Type.BUG)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='issues')
     submitted_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['-submitted_at',]
+        ordering = ['submitted_at', 'pk']
         
     @property
     def relative_id(self) -> int:
-        return self.repo.issues.order_by('submitted_at').index(self)
+        return self.repo.issues.filter(
+            Q(submitted_at__lt=self.submitted_at)
+            | Q(submitted_at=self.submitted_at, pk__lte=self.pk)
+        ).count()
         
     def __str__(self) -> str:
         return f"{self.title} soumis par {self.submitted_by.username} à {self.submitted_at}"
@@ -97,19 +116,30 @@ class IssueAttachment(models.Model):
 # Pull request model
 class PullRequest(models.Model):
     class Status(models.TextChoices):
-        APPROVED = 'approved', "Approuvé"
-        REJECTED = 'rejected', "Rejeté"
+        OPEN = 'open', "Ouverte"
+        MERGED = 'merged', "Fusionnée"
+        CLOSED = 'closed', "Fermée"
+
+    repo = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name='pull_requests')
         
     title = models.CharField(max_length=120)
     description = models.TextField()
     source_branch = models.CharField(max_length=60)
     target_branch = models.CharField(max_length=60)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     issue = models.OneToOneField(Issue, on_delete=models.SET_NULL, related_name='pull_request', blank=True, null=True)
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='pull_requests')
     submitted_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         ordering = ['-submitted_at',]
+
+    @property
+    def relative_id(self) -> int:
+        return self.repo.pull_requests.filter(
+            Q(submitted_at__lt=self.submitted_at)
+            | Q(submitted_at=self.submitted_at, pk__lte=self.pk)
+        ).count()
         
     def __str__(self) -> str:
         return f"{self.title} par {self.submitted_by.username}" + (f" a résolu {self.issue.relative_id}" if getattr(self, 'issue', None) else "")
@@ -117,12 +147,15 @@ class PullRequest(models.Model):
 
 # Star model    
 class Star(models.Model):
-    repo = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='stars')
-    starred_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    repo = models.ForeignKey(Repository, on_delete=models.CASCADE, related_name='stars')
+    starred_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='repository_stars')
     starred_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         ordering = ['-starred_at', 'starred_by']
+        constraints = [
+            models.UniqueConstraint(fields=['repo', 'starred_by'], name='unique_repository_star_per_user'),
+        ]
         
     def __str__(self) -> str:
         return f"{self.repo} aimé par {self.starred_by} à {self.starred_at}"
@@ -136,6 +169,9 @@ class Fork(models.Model):
     
     class Meta:
         ordering = ['-forked_at', 'forked_by']
+        constraints = [
+            models.UniqueConstraint(fields=['repo', 'forked_by'], name='unique_repository_fork_per_user'),
+        ]
         
     def __str__(self) -> str:
         return f"{self.repo} forké par {self.forked_by} à {self.forked_at}"
@@ -148,6 +184,9 @@ class Watcher(models.Model):
     
     class Meta:
         ordering = ['-watched_at', 'watched_by']
+        constraints = [
+            models.UniqueConstraint(fields=['repo', 'watched_by'], name='unique_repository_watch_per_user'),
+        ]
         
     def __str__(self) -> str:
         return f"{self.repo} surveillé par {self.watched_by} à {self.watched_at}"

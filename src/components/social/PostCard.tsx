@@ -17,32 +17,50 @@ import {
   CircleHelp,
   Megaphone,
 } from "lucide-react";
-import { Post } from "@/types";
+import { Comment, Post } from "@/types";
 import { useAfriHubStore } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 import { CodeSnippetViewer } from "../ui/CodeSnippetViewer";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 interface PostCardProps {
   post: Post;
+  onUpdate?: (post: Post) => void;
+  onDelete?: (postId: string) => void;
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProps) {
   const {
     currentUser,
+    isAuthenticated,
     toggleLikePost,
     toggleBookmarkPost,
     deletePost,
     comments,
     addComment,
   } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const [postOverride, setPostOverride] = useState<{ id: string; post: Post } | null>(null);
+  const post = postOverride?.id === initialPost.id ? postOverride.post : initialPost;
+  const [serverComments, setServerComments] = useState<Comment[]>([]);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [isSavingAction, setIsSavingAction] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [shareFeedback, setShareFeedback] = useState(false);
 
-  const postComments = comments[post.id] || [];
+  const postComments = isDemoMode ? comments[post.id] || [] : serverComments;
   const isAuthor = post.author.id === currentUser.id;
+
+  const updatePost = (updatedPost: Post) => {
+    setPostOverride({ id: initialPost.id, post: updatedPost });
+    onUpdate?.(updatedPost);
+  };
 
   const handleShare = () => {
     navigator.clipboard.writeText(`${window.location.origin}/feed#${post.id}`);
@@ -50,11 +68,94 @@ export function PostCard({ post }: PostCardProps) {
     setTimeout(() => setShareFeedback(false), 2000);
   };
 
-  const handleCommentSubmit = (e: React.FormEvent) => {
+  const handleLike = async () => {
+    setActionError("");
+    if (isDemoMode) {
+      toggleLikePost(post.id);
+      return;
+    }
+    setIsSavingAction(true);
+    try {
+      const result = await socialService.setPostLiked(post.id, !post.isLiked);
+      updatePost({ ...post, isLiked: result.isLiked, likesCount: result.likesCount });
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "La réaction n’a pas pu être enregistrée."));
+    } finally {
+      setIsSavingAction(false);
+    }
+  };
+
+  const handleBookmark = async () => {
+    setActionError("");
+    if (isDemoMode) {
+      toggleBookmarkPost(post.id);
+      return;
+    }
+    setIsSavingAction(true);
+    try {
+      const result = await socialService.setPostBookmarked(post.id, !post.isBookmarked);
+      updatePost({ ...post, isBookmarked: result.isBookmarked });
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "La publication n’a pas pu être enregistrée."));
+    } finally {
+      setIsSavingAction(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setActionError("");
+    if (isDemoMode) {
+      deletePost(post.id);
+      onDelete?.(post.id);
+      return;
+    }
+    setIsSavingAction(true);
+    try {
+      await socialService.deletePost(post.id);
+      onDelete?.(post.id);
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "La publication n’a pas pu être supprimée."));
+    } finally {
+      setIsSavingAction(false);
+    }
+  };
+
+  const toggleComments = async () => {
+    const shouldOpen = !showComments;
+    setShowComments(shouldOpen);
+    if (!shouldOpen || isDemoMode || commentsLoaded) return;
+    setIsLoadingComments(true);
+    setActionError("");
+    try {
+      setServerComments(await socialService.getComments(post.id));
+      setCommentsLoaded(true);
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "Les commentaires n’ont pas pu être chargés."));
+    } finally {
+      setIsLoadingComments(false);
+    }
+  };
+
+  const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim()) return;
-    addComment(post.id, commentText.trim());
-    setCommentText("");
+    setActionError("");
+    if (isDemoMode) {
+      addComment(post.id, commentText.trim());
+      setCommentText("");
+      return;
+    }
+    setIsSavingAction(true);
+    try {
+      const comment = await socialService.createComment(post.id, commentText.trim());
+      setServerComments((items) => [...items, comment]);
+      updatePost({ ...post, commentsCount: post.commentsCount + 1 });
+      setCommentText("");
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "Le commentaire n’a pas pu être envoyé."));
+    } finally {
+      setIsSavingAction(false);
+    }
   };
 
   const getBadgeStyle = (type: Post["type"]) => {
@@ -157,7 +258,7 @@ export function PostCard({ post }: PostCardProps) {
               </button>
               {isAuthor && (
                 <button
-                  onClick={() => deletePost(post.id)}
+                  onClick={() => void handleDelete()}
                   className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[#f85149] hover:bg-[#21262d]"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -216,12 +317,15 @@ export function PostCard({ post }: PostCardProps) {
         </div>
       )}
 
+      {actionError && <p className="mt-3 text-xs text-[#f85149]" role="alert">{actionError}</p>}
+
       {/* Action Buttons: Like, Comment, Share, Bookmark */}
       <div className="mt-4 flex items-center justify-between border-t border-[#30363d] pt-3 text-xs text-[#8b949e]">
         <div className="flex items-center gap-4 sm:gap-6">
           <button
             type="button"
-            onClick={() => toggleLikePost(post.id)}
+            onClick={() => void handleLike()}
+            disabled={isSavingAction}
             aria-label={post.isLiked ? "Retirer la mention J’aime" : "J’aime cette publication"}
             aria-pressed={post.isLiked}
             className={`flex items-center gap-1.5 transition-colors ${
@@ -235,11 +339,11 @@ export function PostCard({ post }: PostCardProps) {
           </button>
 
           <button
-            onClick={() => setShowComments(!showComments)}
+            onClick={() => void toggleComments()}
             className="flex items-center gap-1.5 transition-colors hover:text-[#2f81f7]"
           >
             <MessageSquare className="h-4 w-4" />
-            <span>{post.commentsCount + postComments.length}</span>
+            <span>{Math.max(post.commentsCount, postComments.length)}</span>
           </button>
 
           <button
@@ -252,7 +356,8 @@ export function PostCard({ post }: PostCardProps) {
         </div>
 
         <button
-          onClick={() => toggleBookmarkPost(post.id)}
+          onClick={() => void handleBookmark()}
+          disabled={isSavingAction}
           className={`p-1.5 rounded-lg transition-colors ${
             post.isBookmarked
               ? "bg-[#1f6feb]/10 text-[#58a6ff]"
@@ -268,7 +373,7 @@ export function PostCard({ post }: PostCardProps) {
       {showComments && (
         <div className="animate-in mt-4 space-y-4 border-t border-[#30363d] pt-4 duration-200 fade-in">
           {/* New Comment Input */}
-          <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
+          {isAuthenticated || isDemoMode ? <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={currentUser.avatar}
@@ -284,15 +389,16 @@ export function PostCard({ post }: PostCardProps) {
             />
             <button
               type="submit"
-              disabled={!commentText.trim()}
+              disabled={!commentText.trim() || isSavingAction}
               className="ui-button ui-button-primary p-2"
             >
               <Send className="h-3.5 w-3.5" />
             </button>
-          </form>
+          </form> : <p className="text-xs text-[#8b949e]">Connectez-vous pour commenter.</p>}
 
           {/* Comments List */}
           <div className="space-y-3 pt-2">
+            {isLoadingComments && <p className="text-xs text-[#8b949e]">Chargement des commentaires…</p>}
             {postComments.map((comment) => (
               <div key={comment.id} className="flex items-start gap-2.5 text-xs">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

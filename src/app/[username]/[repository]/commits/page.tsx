@@ -1,12 +1,15 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { GitCommit, Copy, Check } from "lucide-react";
 import { RepoHeader } from "@/components/repository/RepoHeader";
 import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
-import { useAfriHubStore } from "@/lib/store";
-import { mockCommits } from "@/lib/mock-data";
+import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
+import { LoadingScreen } from "@/components/layout/LoadingScreen";
+import { useRepository } from "@/hooks/useRepository";
+import { repositoryService } from "@/services/repository.service";
 import { formatDate } from "@/lib/utils";
+import type { Commit, Repository } from "@/types";
 
 interface PageProps {
   params: Promise<{
@@ -18,17 +21,14 @@ interface PageProps {
 export default function CommitsPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const { username, repository: repoName } = resolvedParams;
-  const { repositories } = useAfriHubStore();
+  const { repository: repo, isLoading, error } = useRepository(username, repoName);
 
-  const repo =
-    repositories.find(
-      (r) =>
-        r.name.toLowerCase() === repoName.toLowerCase() &&
-        r.owner.username.toLowerCase() === username.toLowerCase()
-    );
+  if (isLoading) return <LoadingScreen />;
 
   return repo ? (
-    <RepositoryCommitsContent repo={repo} />
+    <RepositoryCommitsContent key={repo.id} repo={repo} />
+  ) : error ? (
+    <RepositoryUnavailable message={error} />
   ) : (
     <RepositoryNotFound username={username} repository={repoName} />
   );
@@ -37,10 +37,29 @@ export default function CommitsPage({ params }: PageProps) {
 function RepositoryCommitsContent({
   repo,
 }: {
-  repo: import("@/types").Repository;
+  repo: Repository;
 }) {
   const [copiedSha, setCopiedSha] = useState<string | null>(null);
-  const repoCommits = mockCommits.filter((commit) => commit.repositoryId === repo.id);
+  const [result, setResult] = useState<{
+    key: string;
+    commits: Commit[];
+    error: string;
+  } | null>(null);
+  const key = `${repo.id}:${repo.defaultBranch}`;
+  const currentResult = result?.key === key ? result : null;
+  const repoCommits = currentResult?.commits || [];
+
+  useEffect(() => {
+    let active = true;
+    void repositoryService.getCommits(repo.id, repo.defaultBranch).then((commits) => {
+      if (active) setResult({ key, commits, error: "" });
+    }).catch(() => {
+      if (active) setResult({ key, commits: [], error: "Impossible de charger l’historique des commits." });
+    });
+    return () => {
+      active = false;
+    };
+  }, [key, repo.defaultBranch, repo.id]);
 
   const handleCopySha = (sha: string) => {
     navigator.clipboard.writeText(sha).then(() => {
@@ -61,12 +80,18 @@ function RepositoryCommitsContent({
               Historique des commits sur <span className="font-mono text-[#58a6ff]">{repo.defaultBranch}</span>
             </h1>
           </div>
-          <span className="text-xs text-[#8b949e]">{repoCommits.length} commits au total</span>
+          <span className="text-xs text-[#8b949e]">
+            {currentResult ? `${repoCommits.length} commits au total` : "Chargement…"}
+          </span>
         </div>
 
         {/* Commits List */}
         <div className="rounded-2xl bg-[#111113] border border-[#27272A] overflow-hidden divide-y divide-[#27272A]/50">
-          {repoCommits.length === 0 ? (
+          {!currentResult ? (
+            <div className="px-6 py-12 text-center text-xs text-[#8b949e]">Chargement des commits…</div>
+          ) : currentResult.error ? (
+            <div role="alert" className="px-6 py-12 text-center text-xs text-rose-300">{currentResult.error}</div>
+          ) : repoCommits.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <GitCommit className="mx-auto h-8 w-8 text-[#8b949e]" aria-hidden="true" />
               <h2 className="mt-3 text-sm font-semibold text-[#e6edf3]">Aucun commit</h2>

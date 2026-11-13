@@ -12,15 +12,20 @@ import {
   ExternalLink,
   ChevronLeft,
   X,
+  Plus,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { CodeSnippetViewer } from "@/components/ui/CodeSnippetViewer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatDate } from "@/lib/utils";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
+import type { Conversation, Message } from "@/types";
 
 export default function MessagesPage() {
-  const { hasHydrated } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const { hasHydrated, isAuthenticated, authLoading } = useAfriHubStore();
   const {
     currentUser,
     conversations,
@@ -38,17 +43,73 @@ export default function MessagesPage() {
   const [mobileView, setMobileView] = useState<"list" | "chat">(() =>
     activeConversationId ? "chat" : "list"
   );
+  const [apiConversations, setApiConversations] = useState<Conversation[]>([]);
+  const [apiMessages, setApiMessages] = useState<Record<string, Message[]>>({});
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [loadedConversationsFor, setLoadedConversationsFor] = useState<string | null>(null);
+  const [apiError, setApiError] = useState("");
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [groupUsernames, setGroupUsernames] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isLoadingConversations = !isDemoMode && (authLoading || (isAuthenticated && loadedConversationsFor !== currentUser.id));
 
-  const activeConv =
-    conversations.find((c) => c.id === activeConversationId) || conversations[0];
-  const activeMessages = (activeConv ? messages[activeConv.id] : []) || [];
+  useEffect(() => {
+    if (isDemoMode || authLoading || !isAuthenticated) return;
+    let active = true;
+    void socialService.getConversations().then((items) => {
+      if (!active) return;
+      setApiConversations(items);
+      const requestedId = new URLSearchParams(window.location.search).get("conversation");
+      const selected = items.find((item) => item.id === requestedId)
+        || items[0];
+      setSelectedConversationId(selected?.id || null);
+      setMobileView(selected ? "chat" : "list");
+    }).catch((error: unknown) => {
+      if (active) setApiError(getApiErrorMessage(error, "Les conversations n’ont pas pu être chargées."));
+    }).finally(() => {
+      if (active) setLoadedConversationsFor(currentUser.id);
+    });
+    return () => { active = false; };
+  }, [authLoading, currentUser.id, isAuthenticated, isDemoMode]);
+
+  const selectedId = isDemoMode ? activeConversationId : selectedConversationId;
+  const visibleConversations = isDemoMode ? conversations : isAuthenticated ? apiConversations : [];
+  const isLoadingMessages = !isDemoMode && isAuthenticated && !!selectedId && !Object.prototype.hasOwnProperty.call(apiMessages, selectedId);
+
+  useEffect(() => {
+    if (isDemoMode || !isAuthenticated || !selectedId) return;
+    let active = true;
+    void socialService.getMessages(selectedId).then((items) => {
+      if (active) {
+        setApiMessages((current) => ({ ...current, [selectedId]: items }));
+        setApiConversations((conversations) => conversations.map((conversation) => conversation.id === selectedId
+          ? { ...conversation, unreadCount: 0 }
+          : conversation));
+        window.dispatchEvent(new Event("afrihub:conversations-updated"));
+      }
+    }).catch((error: unknown) => {
+      if (active) {
+        setApiError(getApiErrorMessage(error, "Les messages n’ont pas pu être chargés."));
+        setApiMessages((current) => current[selectedId] ? current : { ...current, [selectedId]: [] });
+      }
+    }).finally(() => {
+      if (active) setApiMessages((current) => current[selectedId] ? current : { ...current, [selectedId]: [] });
+    });
+    return () => { active = false; };
+  }, [isAuthenticated, isDemoMode, selectedId]);
+
+  const activeConv = visibleConversations.find((conversation) => conversation.id === selectedId)
+    || visibleConversations[0];
+  const activeMessages = isDemoMode
+    ? (activeConv ? messages[activeConv.id] : []) || []
+    : (activeConv ? apiMessages[activeConv.id] : []) || [];
 
   const otherParticipant = activeConv?.participants.find(
     (p) => p.id !== currentUser.id
   ) || activeConv?.participants[0];
 
-  const filteredConversations = conversations.filter((conversation) => {
+  const filteredConversations = visibleConversations.filter((conversation) => {
     const searchText = [
       conversation.name || "",
       ...conversation.participants.map((participant) => `${participant.name} ${participant.username}`),
@@ -63,27 +124,60 @@ export default function MessagesPage() {
     if (container) container.scrollTop = container.scrollHeight;
   }, [activeConv?.id, activeMessages.length, hasHydrated]);
 
-  const handleSend = (e: FormEvent<HTMLFormElement>) => {
+  const handleSend = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!activeConv || (!textInput.trim() && !codeSnippet.trim())) return;
-
-    if (codeSnippet.trim()) {
-      sendMessage(
-        activeConv.id,
-        textInput.trim() || "Voici un extrait de code :",
-        "code",
-        {
-          language: codeLang,
-          code: codeSnippet.trim(),
+    setApiError("");
+    const code = codeSnippet.trim();
+    try {
+      if (isDemoMode) {
+        if (code) {
+          sendMessage(activeConv.id, textInput.trim() || "Voici un extrait de code :", "code", {
+            language: codeLang,
+            code,
+          });
+        } else {
+          sendMessage(activeConv.id, textInput.trim(), "text");
         }
-      );
+      } else {
+        const newMessage = await socialService.sendMessage(activeConv.id, {
+          content: textInput.trim(),
+          type: code ? "code" : "text",
+          codeSnippet: code ? { language: codeLang, code } : undefined,
+        });
+        setApiMessages((current) => ({
+          ...current,
+          [activeConv.id]: [...(current[activeConv.id] || []), newMessage],
+        }));
+        setApiConversations((items) => items.map((conversation) => conversation.id === activeConv.id
+          ? { ...conversation, lastMessage: newMessage, updatedAt: newMessage.createdAt }
+          : conversation));
+      }
       setCodeSnippet("");
       setShowCodeModal(false);
-    } else {
-      sendMessage(activeConv.id, textInput.trim(), "text");
+      setTextInput("");
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "Le message n’a pas pu être envoyé."));
     }
+  };
 
-    setTextInput("");
+  const handleCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const usernames = groupUsernames.split(/[\s,;]+/).map((username) => username.trim()).filter(Boolean);
+    if (!groupName.trim() || usernames.length === 0) return;
+    setApiError("");
+    try {
+      const group = await socialService.createGroupConversation(groupName.trim(), usernames);
+      setApiConversations((items) => [group, ...items]);
+      setSelectedConversationId(group.id);
+      setActiveConversationId(group.id);
+      setMobileView("chat");
+      setGroupName("");
+      setGroupUsernames("");
+      setShowNewGroup(false);
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "Le groupe n’a pas pu être créé."));
+    }
   };
 
   return (
@@ -102,10 +196,29 @@ export default function MessagesPage() {
                 Messages
               </h1>
               <p className="mt-1 text-xs text-(--secondary-text)">
-                {conversations.length} conversations
+                {visibleConversations.length} conversations
               </p>
             </div>
+            {!isDemoMode && isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => setShowNewGroup((value) => !value)}
+                aria-expanded={showNewGroup}
+                className="grid h-9 w-9 place-items-center rounded-full text-(--secondary-text) transition-colors hover:bg-(--muted) hover:text-(--accent)"
+                title="Créer un groupe"
+              ><Plus className="h-4 w-4" aria-hidden="true" /></button>
+            )}
           </div>
+
+          {showNewGroup && (
+            <form onSubmit={handleCreateGroup} className="space-y-2 rounded-xl border border-(--border) bg-(--card) p-3">
+              <label htmlFor="group-name" className="sr-only">Nom du groupe</label>
+              <input id="group-name" required value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Nom du groupe" className="h-9 w-full rounded-lg bg-(--muted) px-3 text-xs text-(--primary-text) outline-none focus:ring-1 focus:ring-(--accent)" />
+              <label htmlFor="group-members" className="sr-only">Noms d’utilisateur des membres</label>
+              <input id="group-members" required value={groupUsernames} onChange={(event) => setGroupUsernames(event.target.value)} placeholder="membres (séparés par virgule)" className="h-9 w-full rounded-lg bg-(--muted) px-3 text-xs text-(--primary-text) outline-none focus:ring-1 focus:ring-(--accent)" />
+              <button type="submit" className="w-full rounded-lg bg-(--action) px-3 py-2 text-xs font-semibold text-white hover:bg-(--action-hover)">Créer le groupe</button>
+            </form>
+          )}
 
           <div className="relative">
             <Search
@@ -137,7 +250,7 @@ export default function MessagesPage() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 sm:px-3">
-          {!hasHydrated ? (
+          {(isDemoMode ? !hasHydrated : isLoadingConversations) ? (
             <div role="status" aria-label="Chargement des conversations" aria-busy="true" className="space-y-2 p-2">
               {Array.from({ length: 6 }, (_, index) => (
                 <div key={index} className="flex items-center gap-3 rounded-xl p-2">
@@ -154,10 +267,10 @@ export default function MessagesPage() {
             <EmptyState
               className="my-2 min-h-0 border-0 bg-transparent px-4 py-8"
               icon={<MessageSquare className="h-5 w-5" />}
-              title={conversations.length === 0 ? "Aucune conversation" : "Aucun résultat"}
+              title={visibleConversations.length === 0 ? "Aucune conversation" : "Aucun résultat"}
               description={
-                conversations.length === 0
-                  ? "Vos échanges apparaîtront ici."
+                visibleConversations.length === 0
+                  ? (isAuthenticated || isDemoMode ? "Vos échanges apparaîtront ici. Démarrez une conversation depuis le profil d’un développeur." : "Connectez-vous pour consulter vos échanges.")
                   : "Essayez un autre nom pour retrouver une discussion."
               }
             />
@@ -179,6 +292,7 @@ export default function MessagesPage() {
                     aria-pressed={isSelected}
                     onClick={() => {
                       setActiveConversationId(conv.id);
+                      if (!isDemoMode) setSelectedConversationId(conv.id);
                       setMobileView("chat");
                     }}
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
@@ -237,7 +351,7 @@ export default function MessagesPage() {
             mobileView === "list" ? "hidden md:flex" : "flex"
           }`}
         >
-          {!hasHydrated ? (
+          {(isDemoMode ? !hasHydrated : isLoadingConversations || authLoading) ? (
             <div role="status" aria-label="Chargement de la discussion" aria-busy="true" className="flex flex-1 flex-col justify-end gap-5 p-5">
               <Skeleton className="h-16 w-3/4 max-w-md rounded-xl" />
               <Skeleton className="ml-auto h-16 w-2/3 max-w-md rounded-xl" />
@@ -303,7 +417,9 @@ export default function MessagesPage() {
                 className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7"
               >
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-                  {activeMessages.length === 0 ? (
+                  {isLoadingMessages && activeMessages.length === 0 ? (
+                    <p className="my-auto py-10 text-center text-sm text-(--secondary-text)">Chargement des messages…</p>
+                  ) : activeMessages.length === 0 ? (
                     <p className="my-auto py-10 text-center text-sm text-(--secondary-text)">
                       Aucun message pour le moment. Envoyez le premier message.
                     </p>
@@ -431,11 +547,12 @@ export default function MessagesPage() {
             <EmptyState
                 className="m-5 min-h-0 flex-1 border-0 bg-transparent"
               icon={<MessageSquare className="h-5 w-5" />}
-              title="Aucune discussion sélectionnée"
-              description="Choisissez une conversation dans la liste de gauche."
+              title={!isDemoMode && !isAuthenticated && !authLoading ? "Connectez-vous à la messagerie" : "Aucune discussion sélectionnée"}
+              description={!isDemoMode && !isAuthenticated ? "Connectez-vous pour consulter ou envoyer des messages." : "Choisissez une conversation dans la liste de gauche ou démarrez-en une depuis un profil."}
             />
           )}
         </div>
+        {(apiError || (!authLoading && !isAuthenticated && !isDemoMode ? "Connectez-vous pour accéder à votre messagerie." : "")) && <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-lg border border-red-500/30 bg-[#2b1616] px-4 py-3 text-xs text-red-200 shadow-lg" role="alert">{apiError || "Connectez-vous pour accéder à votre messagerie."}{!isAuthenticated && !isDemoMode && <Link href="/login" className="ml-2 font-semibold underline">Se connecter</Link>}</div>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AtSign,
@@ -20,6 +20,8 @@ import { useAfriHubStore } from "@/lib/store";
 import type { NotificationItem } from "@/types";
 import { formatDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 type NotifFilter = "all" | "unread" | "pr_issue" | "social";
 type NotificationDateGroup = "today" | "yesterday" | "earlier";
@@ -71,7 +73,8 @@ function getDateGroup(createdAt: string): NotificationDateGroup {
 }
 
 export default function NotificationsPage() {
-  const { hasHydrated } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const { hasHydrated, isAuthenticated, authLoading, currentUser } = useAfriHubStore();
   const {
     notifications,
     markNotificationAsRead,
@@ -80,9 +83,36 @@ export default function NotificationsPage() {
   } = useAfriHubStore();
 
   const [activeFilter, setActiveFilter] = useState<NotifFilter>("all");
-  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+  const [apiNotifications, setApiNotifications] = useState<NotificationItem[]>([]);
+  const [loadedNotificationsFor, setLoadedNotificationsFor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [apiError, setApiError] = useState("");
+  const isLoading = !isDemoMode && (authLoading || (isAuthenticated && loadedNotificationsFor !== currentUser.id));
 
-  const filteredNotifications = notifications.filter((notification) => {
+  useEffect(() => {
+    if (isDemoMode || authLoading || !isAuthenticated) return;
+    let active = true;
+    void socialService.getNotifications({ page: 1, page_size: 100 }).then((response) => {
+      if (!active) return;
+      setApiNotifications(response.results);
+      setHasMore(Boolean(response.next));
+      setPage(1);
+    }).catch((error: unknown) => {
+      if (active) setApiError(getApiErrorMessage(error, "Les notifications n’ont pas pu être chargées."));
+    }).finally(() => {
+      if (active) setLoadedNotificationsFor(currentUser.id);
+    });
+    return () => { active = false; };
+  }, [authLoading, currentUser.id, isAuthenticated, isDemoMode]);
+
+  const visibleNotifications = isDemoMode ? notifications : isAuthenticated ? apiNotifications : [];
+  const isReady = isDemoMode ? hasHydrated : !isLoading;
+  const unreadCount = visibleNotifications.filter((notification) => !notification.isRead).length;
+
+  const filteredNotifications = visibleNotifications.filter((notification) => {
     if (activeFilter === "unread") return !notification.isRead;
     if (activeFilter === "pr_issue") {
       return ["pr_review", "issue_assigned", "collab_invite"].includes(notification.type);
@@ -115,6 +145,69 @@ export default function NotificationsPage() {
     group?.items.push(notification);
   }
 
+  const handleMarkRead = async (id: string) => {
+    if (isDemoMode) {
+      markNotificationAsRead(id);
+      return;
+    }
+    setApiError("");
+    try {
+      const notification = await socialService.markNotificationRead(id);
+      setApiNotifications((items) => items.map((item) => item.id === id ? notification : item));
+      window.dispatchEvent(new Event("afrihub:notifications-updated"));
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "La notification n’a pas pu être marquée comme lue."));
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    if (isDemoMode) {
+      markAllNotificationsAsRead();
+      return;
+    }
+    setIsSaving(true);
+    setApiError("");
+    try {
+      await socialService.markAllNotificationsRead();
+      setApiNotifications((items) => items.map((item) => ({ ...item, isRead: true })));
+      window.dispatchEvent(new Event("afrihub:notifications-updated"));
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "Les notifications n’ont pas pu être mises à jour."));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (isDemoMode) {
+      deleteNotification(id);
+      return;
+    }
+    setApiError("");
+    try {
+      await socialService.deleteNotification(id);
+      setApiNotifications((items) => items.filter((item) => item.id !== id));
+      window.dispatchEvent(new Event("afrihub:notifications-updated"));
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "La notification n’a pas pu être supprimée."));
+    }
+  };
+
+  const loadMore = async () => {
+    if (isDemoMode || !hasMore || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await socialService.getNotifications({ page: page + 1, page_size: 100 });
+      setApiNotifications((items) => [...items, ...response.results]);
+      setHasMore(Boolean(response.next));
+      setPage((current) => current + 1);
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "Impossible de charger d’autres notifications."));
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 pb-24 sm:px-6 sm:py-8">
       <div className="space-y-6 sm:space-y-8">
@@ -127,10 +220,11 @@ export default function NotificationsPage() {
               Suivez l&apos;activité de vos dépôts et de votre réseau.
             </p>
           </div>
-          {hasHydrated && unreadCount > 0 && (
+          {isReady && unreadCount > 0 && (
             <button
               type="button"
-              onClick={markAllNotificationsAsRead}
+              onClick={() => void handleMarkAllRead()}
+              disabled={isSaving}
               className="inline-flex min-h-9 w-fit items-center gap-2 rounded-lg px-2 text-xs font-medium text-(--secondary-text) transition-colors hover:bg-(--muted) hover:text-(--primary-text)"
             >
               <CheckCheck className="h-4 w-4 text-(--accent)" aria-hidden="true" />
@@ -156,7 +250,7 @@ export default function NotificationsPage() {
                   }`}
                 >
                   {option.label}
-                  {hasHydrated && option.id === "unread" && unreadCount > 0 && (
+                  {isReady && option.id === "unread" && unreadCount > 0 && (
                     <span className="ml-1.5 text-(--secondary-text)">{unreadCount}</span>
                   )}
                 </button>
@@ -165,7 +259,7 @@ export default function NotificationsPage() {
           </div>
 
           <p className="text-[11px] text-(--secondary-text)" role="status" aria-live="polite">
-            {hasHydrated ? (
+            {isReady ? (
               <>
                 <span className="font-semibold text-(--primary-text)">
                   {filteredNotifications.length}
@@ -184,7 +278,7 @@ export default function NotificationsPage() {
           </p>
         </section>
 
-        {!hasHydrated ? (
+        {!isReady ? (
           <div
             role="status"
             aria-label="Chargement des notifications"
@@ -233,7 +327,7 @@ export default function NotificationsPage() {
                       >
                         <Link
                           href={notification.targetUrl}
-                          onClick={() => markNotificationAsRead(notification.id)}
+                          onClick={() => void handleMarkRead(notification.id)}
                           className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 sm:px-4"
                         >
                           <span className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-(--muted)">
@@ -274,7 +368,7 @@ export default function NotificationsPage() {
                           {!notification.isRead && (
                             <button
                               type="button"
-                              onClick={() => markNotificationAsRead(notification.id)}
+                              onClick={() => void handleMarkRead(notification.id)}
                               aria-label={`Marquer la notification de ${notification.actor.name} comme lue`}
                               title="Marquer comme lu"
                               className="grid h-8 w-8 place-items-center rounded-full text-(--secondary-text) transition-colors hover:bg-(--background) hover:text-(--accent)"
@@ -284,7 +378,7 @@ export default function NotificationsPage() {
                           )}
                           <button
                             type="button"
-                            onClick={() => deleteNotification(notification.id)}
+                            onClick={() => void handleDelete(notification.id)}
                             aria-label={`Supprimer la notification de ${notification.actor.name}`}
                             title="Supprimer"
                             className="grid h-8 w-8 place-items-center rounded-full text-(--secondary-text) transition-colors hover:bg-(--background) hover:text-(--danger)"
@@ -309,6 +403,12 @@ export default function NotificationsPage() {
               Aucune notification dans cette section pour le moment.
             </p>
           </div>
+        )}
+        {(apiError || (!authLoading && !isAuthenticated && !isDemoMode ? "Connectez-vous pour consulter vos notifications." : "")) && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">{apiError || "Connectez-vous pour consulter vos notifications."}{!isAuthenticated && !isDemoMode && <Link href="/login" className="ml-2 font-semibold underline">Se connecter</Link>}</p>}
+        {!isDemoMode && hasMore && (
+          <button type="button" onClick={() => void loadMore()} disabled={isLoadingMore} className="w-full rounded-lg border border-(--border) px-4 py-2.5 text-sm text-(--primary-text) hover:bg-(--muted) disabled:opacity-60">
+            {isLoadingMore ? "Chargement…" : "Afficher plus"}
+          </button>
         )}
       </div>
     </div>

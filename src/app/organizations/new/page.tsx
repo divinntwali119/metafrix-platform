@@ -5,16 +5,21 @@ import { useRouter } from "next/navigation";
 import { Building2, Globe, MapPin, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useAfriHubStore } from "@/lib/store";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 export default function NewOrganizationPage() {
   const router = useRouter();
-  const { currentUser, organizations, addOrganization } = useAfriHubStore();
+  const { currentUser, organizations, addOrganization, isAuthenticated, authLoading } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
   const [location, setLocation] = useState("Kigali, Rwanda");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -27,8 +32,9 @@ export default function NewOrganizationPage() {
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError("");
     if (!name.trim() || !slug.trim()) return;
     const normalizedSlug = slug
       .trim()
@@ -36,35 +42,49 @@ export default function NewOrganizationPage() {
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "");
-    if (
-      !normalizedSlug ||
-      organizations.some((org) => org.slug.toLowerCase() === normalizedSlug)
-    ) {
+    if (!normalizedSlug || (isDemoMode && organizations.some((org) => org.slug.toLowerCase() === normalizedSlug))) {
+      setFormError("Cet identifiant est invalide ou déjà utilisé.");
       return;
     }
 
-    const newOrg = addOrganization({
-      name: name.trim(),
-      slug: normalizedSlug,
-      description:
-        description.trim() || "Collectif panafricain d'ingénieurs logiciels.",
-      avatar:
-        "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=150&auto=format&fit=crop&q=80",
-      website: website.trim() || "https://metafrix.dev",
-      location: location.trim(),
-      membersCount: 1,
-      repositoriesCount: 0,
-      repositoryIds: [],
-      createdAt: new Date().toISOString(),
-      members: [
-        {
-          user: currentUser,
-          role: "owner" as const,
-        },
-      ],
-    });
-    router.push(`/organizations/${newOrg.slug}`);
-  };
+    if (!isDemoMode && !isAuthenticated) {
+      setFormError("Connectez-vous pour créer une organisation.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (isDemoMode) {
+        const newOrg = addOrganization({
+          name: name.trim(),
+          slug: normalizedSlug,
+          description: description.trim(),
+          avatar: "/avatar-placeholder.svg",
+          website: website.trim(),
+          location: location.trim(),
+          membersCount: 1,
+          repositoriesCount: 0,
+          repositoryIds: [],
+          createdAt: new Date().toISOString(),
+          members: [{ user: currentUser, role: "owner" }],
+        });
+        router.push(`/organizations/${newOrg.slug}`);
+      } else {
+        const organization = await socialService.createOrganization({
+          name: name.trim(),
+          slug: normalizedSlug,
+          description: description.trim(),
+          website: website.trim(),
+          location: location.trim(),
+        });
+        router.push(`/organizations/${organization.slug}`);
+      }
+    } catch (error) {
+      setFormError(getApiErrorMessage(error, "La création de l’organisation a échoué."));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -92,11 +112,12 @@ export default function NewOrganizationPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {organizations.some((org) => org.slug.toLowerCase() === slug.trim().toLowerCase()) && (
-            <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-300">
-              Cet identifiant est déjà utilisé ou invalide. Choisissez-en un autre.
+          {!isDemoMode && !authLoading && !isAuthenticated && (
+            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200">
+              Connectez-vous avant de créer une organisation. <Link href="/login" className="font-semibold underline">Se connecter</Link>
             </p>
           )}
+          {formError && <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-300">{formError}</p>}
           <div>
             <label className="block text-xs font-semibold text-zinc-300 mb-1">
               Nom de l&apos;organisation <span className="text-red-400">*</span>
@@ -184,9 +205,10 @@ export default function NewOrganizationPage() {
             </Link>
             <button
               type="submit"
+              disabled={isSubmitting || (!isDemoMode && (!isAuthenticated || authLoading))}
               className="px-5 py-2.5 rounded-xl bg-[#6366F1] text-xs font-semibold text-white hover:bg-[#4F46E5] transition-all shadow"
             >
-              Créer l&apos;organisation
+              {isSubmitting ? "Création…" : "Créer l’organisation"}
             </button>
           </div>
         </form>

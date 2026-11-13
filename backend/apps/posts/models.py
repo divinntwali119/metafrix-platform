@@ -28,13 +28,33 @@ class Event(models.Model):
 
 # Post model
 class Post(models.Model):
-    title = models.CharField(max_length=100)
+    class Type(models.TextChoices):
+        TEXT = "text", "Discussion"
+        CODE = "code", "Code"
+        PROJECT = "project", "Projet"
+        TUTORIAL = "tutorial", "Tutoriel"
+        QUESTION = "question", "Question"
+        ANNOUNCEMENT = "announcement", "Annonce"
+
+    title = models.CharField(max_length=100, blank=True, default="")
     description = models.TextField()
     posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='posts')
     posted_at = models.DateTimeField(auto_now_add=True)
+    type = models.CharField(max_length=20, choices=Type.choices, default=Type.TEXT)
+    code_language = models.CharField(max_length=40, blank=True, default="")
+    code_content = models.TextField(blank=True, default="")
+    code_filename = models.CharField(max_length=160, blank=True, default="")
+    media_url = models.URLField(max_length=2048, blank=True, default="")
+    repository = models.ForeignKey(
+        "repositories.Repository",
+        on_delete=models.SET_NULL,
+        related_name="social_posts",
+        null=True,
+        blank=True,
+    )
     
     class Meta:
-        ordering = ['title', '-posted_at']
+        ordering = ['-posted_at', '-pk']
         
     def __str__(self) -> str:
         return f"{self.posted_by} : {self.title}"
@@ -71,4 +91,38 @@ class Like(models.Model):
         verbose_name = "J'aime"
         verbose_name_plural = "J'aimes"
         ordering = ['-liked_at', 'post', 'event']
+
+
+class PostComment(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_comments")
+    content = models.CharField(max_length=2000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+
+class PostLike(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="post_likes")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_likes")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["post", "user"], name="unique_post_like_per_user"),
+        ]
+
+
+class PostBookmark(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="bookmarks")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_bookmarks")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["post", "user"], name="unique_post_bookmark_per_user"),
+        ]
     

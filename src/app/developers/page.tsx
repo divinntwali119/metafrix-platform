@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowDown,
@@ -17,25 +17,117 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { MemberCover } from "@/components/social/MemberCover";
 import { formatNumber } from "@/lib/utils";
 import type { User } from "@/types";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 const skillOptions = [
   "Toutes",
-  "TypeScript",
-  "Python",
-  "Go",
-  "React",
-  "DevOps",
-  "Machine Learning",
-  "Fintech",
+  "Developpeur web full stack",
+  "Developpeur web front-end",
+  "Developpeur web backend",
+  "Ingénieur logiciel",
+  "Développeur ou développeuse mobile",
+  "Ingénieur ou ingénieure DevOps",
+  "Spécialiste des données",
+  "Spécialiste en IA et apprentissage automatique",
+  "Designer UX/UI",
 ];
 
 export default function DevelopersPage() {
-  const { users, currentUser, toggleFollowUser, hasHydrated } = useAfriHubStore();
+  const { users, currentUser, isAuthenticated, authLoading, toggleFollowUser, updateProfile, hasHydrated } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [search, setSearch] = useState("");
   const [selectedSkill, setSelectedSkill] = useState("Toutes");
+  const [apiUsers, setApiUsers] = useState<User[]>([]);
+  const [resultCount, setResultCount] = useState(0);
+  const [loadedQueryKey, setLoadedQueryKey] = useState("");
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [isFollowingAction, setIsFollowingAction] = useState(false);
+  const [apiError, setApiError] = useState("");
   const normalizedSearch = search.trim().toLowerCase();
+  const queryKey = `${normalizedSearch}|${selectedSkill}|${isAuthenticated ? currentUser.id : "anonymous"}`;
+  const isLoading = !isDemoMode && (authLoading || loadedQueryKey !== queryKey);
 
-  const filteredUsers = users.filter((user) => {
+  useEffect(() => {
+    if (isDemoMode) return;
+    let active = true;
+    if (authLoading) return () => { active = false; };
+    const timer = window.setTimeout(() => {
+      void socialService.getDevelopers({
+        search: normalizedSearch || undefined,
+        expertise: selectedSkill === "Toutes" ? undefined : selectedSkill,
+        page: 1,
+        page_size: 24,
+      }).then((response) => {
+        if (!active) return;
+        setApiUsers(response.results);
+        setResultCount(response.count);
+        setHasMore(Boolean(response.next));
+        setPage(1);
+        setLoadedQueryKey(queryKey);
+      }).catch((error: unknown) => {
+        if (active) {
+          setApiError(getApiErrorMessage(error, "L’annuaire n’a pas pu être chargé."));
+          setLoadedQueryKey(queryKey);
+        }
+      });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [authLoading, isDemoMode, normalizedSearch, selectedSkill, currentUser.id, queryKey]);
+
+  const loadMore = async () => {
+    if (isDemoMode || isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await socialService.getDevelopers({
+        search: normalizedSearch || undefined,
+        expertise: selectedSkill === "Toutes" ? undefined : selectedSkill,
+        page: page + 1,
+        page_size: 24,
+      });
+      setApiUsers((items) => [...items, ...response.results]);
+      setHasMore(Boolean(response.next));
+      setPage((current) => current + 1);
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "Impossible de charger d’autres profils."));
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleFollow = async (user: User) => {
+    if (isDemoMode) {
+      toggleFollowUser(user.id);
+      return;
+    }
+    if (!isAuthenticated) {
+      setApiError("Connectez-vous pour suivre un développeur.");
+      return;
+    }
+    setIsFollowingAction(true);
+    setApiError("");
+    try {
+      const result = await socialService.setFollowed(user.username, !user.isFollowed);
+      const delta = result.isFollowed === Boolean(user.isFollowed) ? 0 : result.isFollowed ? 1 : -1;
+      setApiUsers((items) => items.map((item) => item.id === user.id
+        ? { ...item, isFollowed: result.isFollowed, followersCount: result.followersCount }
+        : item));
+      if (delta) updateProfile({ followingCount: Math.max(0, currentUser.followingCount + delta) });
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, "La demande de suivi a échoué."));
+    } finally {
+      setIsFollowingAction(false);
+    }
+  };
+
+  const sourceUsers = isDemoMode ? users : apiUsers;
+  const filteredUsers = sourceUsers.filter((user) => {
     const searchableFields = [
       user.name,
       user.username,
@@ -56,19 +148,13 @@ export default function DevelopersPage() {
     return matchesSearch && matchesSkill;
   });
   const expertiseCount = new Set(
-    users.flatMap((user) => [...user.skills, ...user.technologies])
+    sourceUsers.flatMap((user) => [...user.skills, ...user.technologies])
   ).size;
-  const contributionCount = users.reduce(
-    (total, user) => total + user.contributionsCount,
-    0
-  );
+  const contributionCount = users.reduce((total, user) => total + user.contributionsCount, 0);
   const metrics = [
-    { label: "Développeurs", value: hasHydrated ? formatNumber(users.length) : "—" },
-    { label: "Expertises", value: hasHydrated ? formatNumber(expertiseCount) : "—" },
-    {
-      label: "Contributions",
-      value: hasHydrated ? formatNumber(contributionCount) : "—",
-    },
+    { label: "Développeurs", value: isDemoMode ? (hasHydrated ? formatNumber(users.length) : "—") : (isLoading ? "—" : formatNumber(resultCount)) },
+    { label: isDemoMode ? "Expertises" : "Domaines représentés", value: (isDemoMode ? hasHydrated : !isLoading) ? formatNumber(expertiseCount) : "—" },
+    ...(isDemoMode ? [{ label: "Contributions", value: hasHydrated ? formatNumber(contributionCount) : "—" }] : []),
   ];
 
   return (
@@ -199,12 +285,12 @@ export default function DevelopersPage() {
         </div>
 
         <div className="flex min-h-6 flex-wrap items-center justify-between gap-2 text-xs text-(--secondary-text)">
-          {hasHydrated ? (
+          {(isDemoMode ? hasHydrated : !isLoading) ? (
             <p role="status" aria-live="polite">
               <span className="font-semibold text-(--primary-text)">
-                {filteredUsers.length}
+                {isDemoMode ? filteredUsers.length : resultCount}
               </span>{" "}
-              {filteredUsers.length > 1 ? "développeurs trouvés" : "développeur trouvé"}
+              {(isDemoMode ? filteredUsers.length : resultCount) > 1 ? "développeurs trouvés" : "développeur trouvé"}
             </p>
           ) : (
             <p>Chargement des profils…</p>
@@ -223,7 +309,7 @@ export default function DevelopersPage() {
           )}
         </div>
 
-        {!hasHydrated ? (
+        {(isDemoMode ? !hasHydrated : isLoading) ? (
           <div role="status" aria-label="Chargement des profils" aria-busy="true">
             <ProfileGridSkeleton />
             <span className="sr-only">Chargement des développeurs…</span>
@@ -253,10 +339,22 @@ export default function DevelopersPage() {
                 key={user.id}
                 user={user}
                 currentUserId={currentUser.id}
-                onToggleFollow={toggleFollowUser}
+                onToggleFollow={handleFollow}
+                isFollowingAction={isFollowingAction}
               />
             ))}
           </div>
+        )}
+        {apiError && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300" role="alert">{apiError}</p>}
+        {!isDemoMode && hasMore && (
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={isLoadingMore}
+            className="w-full rounded-lg border border-(--border) px-4 py-2.5 text-sm text-(--primary-text) hover:bg-(--muted) disabled:opacity-60"
+          >
+            {isLoadingMore ? "Chargement…" : "Afficher plus de profils"}
+          </button>
         )}
       </section>
     </div>
@@ -267,10 +365,12 @@ function DeveloperCard({
   user,
   currentUserId,
   onToggleFollow,
+  isFollowingAction,
 }: {
   user: User;
   currentUserId: string;
-  onToggleFollow: (userId: string) => void;
+  onToggleFollow: (user: User) => void;
+  isFollowingAction: boolean;
 }) {
   const isCurrentUser = user.id === currentUserId;
 
@@ -299,7 +399,8 @@ function DeveloperCard({
           {!isCurrentUser && (
             <button
               type="button"
-              onClick={() => onToggleFollow(user.id)}
+              onClick={() => void onToggleFollow(user)}
+              disabled={isFollowingAction}
               aria-pressed={Boolean(user.isFollowed)}
               aria-label={`${user.isFollowed ? "Ne plus suivre" : "Suivre"} ${user.name}`}
               className={`min-h-9 rounded-full px-3 text-xs font-semibold transition-colors ${

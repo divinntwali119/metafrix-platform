@@ -1,11 +1,15 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { CircleDot, CheckCircle2, MessageSquare, Plus, X } from "lucide-react";
 import { RepoHeader } from "@/components/repository/RepoHeader";
 import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
+import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAfriHubStore } from "@/lib/store";
+import { useRepository } from "@/hooks/useRepository";
+import { repositoryService } from "@/services/repository.service";
+import type { Issue } from "@/types";
 import { formatDate } from "@/lib/utils";
 
 interface PageProps {
@@ -18,14 +22,24 @@ interface PageProps {
 export default function IssuesPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const { username, repository: repoName } = resolvedParams;
-  const { repositories, issues, addIssue } = useAfriHubStore();
+  const { repository: repo, isLoading, error } = useRepository(username, repoName);
+  const { issues: demoIssues, addIssue } = useAfriHubStore();
+  const [serverIssues, setServerIssues] = useState<Issue[]>([]);
+  const [requestError, setRequestError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const repo =
-    repositories.find(
-      (r) =>
-        r.name.toLowerCase() === repoName.toLowerCase() &&
-        r.owner.username.toLowerCase() === username.toLowerCase()
-    );
+  useEffect(() => {
+    if (!repo) return;
+    let active = true;
+    void repositoryService.getIssues(repo.id)
+      .then((items) => {
+        if (active) setServerIssues(items);
+      })
+      .catch(() => {
+        if (active) setRequestError("Impossible de charger les issues du dépôt.");
+      });
+    return () => { active = false; };
+  }, [repo]);
 
   const [filter, setFilter] = useState<"open" | "closed">("open");
   const [showNewModal, setShowNewModal] = useState(false);
@@ -33,37 +47,53 @@ export default function IssuesPage({ params }: PageProps) {
   const [body, setBody] = useState("");
   const [label, setLabel] = useState("enhancement");
 
-  const repoIssues = issues.filter((issue) => {
-    return issue.repositoryId === repo?.id;
-  });
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const repoIssues = isDemoMode
+    ? demoIssues.filter((issue) => issue.repositoryId === repo?.id)
+    : serverIssues;
   const filteredIssues = repoIssues.filter((issue) => issue.status === filter);
   const openCount = repoIssues.filter((issue) => issue.status === "open").length;
   const closedCount = repoIssues.filter((issue) => issue.status === "closed").length;
+
+  if (isLoading) return <div className="mx-auto max-w-5xl px-4 py-16 text-sm text-[#A1A1AA]">Chargement du dépôt…</div>;
+
+  if (!repo && error) return <RepositoryUnavailable message={error} />;
 
   if (!repo) {
     return <RepositoryNotFound username={username} repository={repoName} />;
   }
 
-  const handleCreateIssue = (e: React.FormEvent) => {
+  const handleCreateIssue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isSubmitting) return;
 
-    addIssue({
-      repositoryId: repo.id,
-      title: title.trim(),
-      body: body.trim(),
-      labels: [
-        {
-          name: label,
-          color: label === "bug" ? "#ef4444" : label === "enhancement" ? "#6366f1" : "#10b981",
-        },
-      ],
-    });
-
-    setTitle("");
-    setBody("");
-    setFilter("open");
-    setShowNewModal(false);
+    const labels = [{
+      name: label,
+      color: label === "bug" ? "#ef4444" : label === "enhancement" ? "#6366f1" : "#10b981",
+    }];
+    setIsSubmitting(true);
+    setRequestError("");
+    try {
+      if (isDemoMode) {
+        addIssue({ repositoryId: repo.id, title: title.trim(), body: body.trim(), labels });
+      } else {
+        const createdIssue = await repositoryService.createIssue(repo.id, {
+          title: title.trim(),
+          body: body.trim(),
+          labels,
+        });
+        setServerIssues((existing) => [createdIssue, ...existing]);
+      }
+      setTitle("");
+      setBody("");
+      setFilter("open");
+      setShowNewModal(false);
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      setRequestError(detail || "La création de l’issue a échoué.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -71,6 +101,7 @@ export default function IssuesPage({ params }: PageProps) {
       <RepoHeader repository={repo} />
 
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        {requestError && <p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-300">{requestError}</p>}
         {/* Top bar with Open/Closed count and New Issue button */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -183,9 +214,10 @@ export default function IssuesPage({ params }: PageProps) {
                   </button>
                   <button
                     type="submit"
+                    disabled={isSubmitting}
                     className="ui-button ui-button-primary px-4 py-2 text-xs"
                   >
-                    Soumettre l&apos;issue
+                    {isSubmitting ? "Envoi…" : "Soumettre l’issue"}
                   </button>
                 </div>
               </form>

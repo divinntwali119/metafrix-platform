@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FolderGit2, ArrowRight, Lock, Globe, AlertCircle } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { repositoryService } from "@/services/repository.service";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
+import type { Organization } from "@/types";
 
 interface PageProps {
   searchParams: Promise<{ organization?: string }>;
@@ -12,8 +16,15 @@ interface PageProps {
 export default function NewRepositoryPage({ searchParams }: PageProps) {
   const router = useRouter();
   const { organization: organizationSlug } = use(searchParams);
-  const { currentUser, organizations, repositories, addRepository, addOrganizationRepository } = useAfriHubStore();
-  const organization = organizations.find((org) => org.slug === organizationSlug);
+  const { currentUser, organizations, upsertRepository, addOrganizationRepository, isAuthenticated, authLoading } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const [apiOrganization, setApiOrganization] = useState<Organization | null>(null);
+  const [loadedOrganizationSlug, setLoadedOrganizationSlug] = useState<string | null>(null);
+  const [organizationLoadError, setOrganizationLoadError] = useState("");
+  const isLoadingOrganization = Boolean(organizationSlug && !isDemoMode && (authLoading || loadedOrganizationSlug !== organizationSlug));
+  const organization = isDemoMode
+    ? organizations.find((org) => org.slug === organizationSlug)
+    : apiOrganization?.slug === organizationSlug ? apiOrganization : null;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -24,7 +35,22 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!organizationSlug || isDemoMode || authLoading) return;
+    let active = true;
+    void socialService.getOrganization(organizationSlug).then((result) => {
+      if (!active) return;
+      setApiOrganization(result);
+      setLoadedOrganizationSlug(organizationSlug);
+    }).catch((requestError: unknown) => {
+      if (!active) return;
+      setOrganizationLoadError(getApiErrorMessage(requestError, "L’organisation n’a pas pu être chargée."));
+      setLoadedOrganizationSlug(organizationSlug);
+    });
+    return () => { active = false; };
+  }, [authLoading, isDemoMode, organizationSlug]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError("Veuillez renseigner un nom de dépôt.");
@@ -33,42 +59,60 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
 
     const formattedName = name.trim().toLowerCase().replace(/\s+/g, "-");
 
-    if (
-      organization &&
-      repositories.some(
-        (repo) =>
-          organization.repositoryIds?.includes(repo.id) &&
-          repo.name.toLowerCase() === formattedName.toLowerCase()
-      )
-    ) {
-      setError("Ce dépôt existe déjà dans cette organisation.");
+    if (organizationSlug && !organization) {
+      setError(organizationLoadError || "L’organisation n’est pas disponible.");
+      return;
+    }
+
+    if (organization && !isDemoMode && !["owner", "admin"].includes(organization.viewerRole || "")) {
+      setError("Seuls le propriétaire et les administrateurs peuvent associer des dépôts à cette organisation.");
+      return;
+    }
+    if (organization && isPrivate) {
+      setError("Seuls les dépôts publics peuvent être associés à une organisation.");
+      return;
+    }
+    if (!isDemoMode && (!isAuthenticated || authLoading)) {
+      setError("Connectez-vous pour créer un dépôt.");
       return;
     }
 
     setIsSubmitting(true);
     setError("");
 
-    const newRepo = addRepository({
-      name: formattedName,
-      organizationId: organization?.id,
-      description: description.trim(),
-      isPrivate,
-      defaultBranch: "main",
-      language,
-      languageColor: language === "TypeScript" ? "#3178c6" : language === "Python" ? "#3572A5" : "#00ADD8",
-      size: "1.2 MB",
-      license: "MIT",
-      topics: topics.split(",").map((t) => t.trim()).filter(Boolean),
-    });
-
-    if (organization) {
-      addOrganizationRepository(organization.id, newRepo.id);
-    }
-
-    setTimeout(() => {
+    try {
+      const newRepo = await repositoryService.createRepository({
+        name: formattedName,
+        description: description.trim(),
+        isPrivate,
+        language,
+        topics: topics.split(",").map((topic) => topic.trim()).filter(Boolean),
+        initializeReadme: addReadme,
+      });
+      upsertRepository(newRepo);
+      if (organization) {
+        try {
+          if (isDemoMode) addOrganizationRepository(organization.id, newRepo.id);
+          else await socialService.addOrganizationRepository(organization.slug, newRepo.id);
+          router.push(`/organizations/${organization.slug}`);
+        } catch (associationError) {
+          setError(`Le dépôt a été créé mais n’a pas pu être associé : ${getApiErrorMessage(associationError, "vérifiez les droits de gestion de l’organisation.")} Vous pouvez l’associer depuis la page de l’organisation.`);
+        }
+      } else {
+        router.push(`/${newRepo.owner.username}/${newRepo.name}`);
+      }
+    } catch (requestError) {
+      const responseData = (requestError as {
+        response?: { data?: { detail?: string; name?: string[] } };
+      }).response?.data;
+      setError(
+        responseData?.detail ||
+        responseData?.name?.[0] ||
+        "La création du dépôt a échoué. Vérifiez la connexion puis réessayez.",
+      );
+    } finally {
       setIsSubmitting(false);
-      router.push(`/${newRepo.owner.username}/${newRepo.name}`);
-    }, 400);
+    }
   };
 
   return (
@@ -80,13 +124,15 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white">
-              {organization ? `Nouveau dépôt pour ${organization.name}` : "Créer un nouveau dépôt Git"}
+              {organization ? `Créer un dépôt public pour ${organization.name}` : organizationSlug ? "Chargement de l’organisation…" : "Créer un nouveau dépôt Git"}
             </h1>
             <p className="text-xs text-[#A1A1AA] mt-0.5">
               Un dépôt contient tous les fichiers de votre projet ainsi que son historique de versions.
             </p>
           </div>
         </div>
+
+        {organizationLoadError && <p className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-300" role="alert">{organizationLoadError}</p>}
 
         {error && (
           <div className="mt-6 flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
@@ -100,7 +146,7 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
-                {organization ? "Organisation" : "Propriétaire"}
+                {organization ? "Propriétaire du dépôt" : "Propriétaire"}
               </label>
               <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#18181B] border border-[#27272A] text-xs text-white">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -109,7 +155,7 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
                   alt={organization?.name || currentUser.name}
                   className="ui-avatar h-5 w-5 rounded-full object-cover"
                 />
-                <span className="font-semibold">{organization?.name || currentUser.username}</span>
+                <span className="font-semibold">{currentUser.username}</span>
               </div>
             </div>
 
@@ -183,7 +229,7 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label
-                onClick={() => setIsPrivate(false)}
+                    onClick={() => setIsPrivate(false)}
                 className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
                   !isPrivate
                     ? "bg-[#6366F1]/10 border-[#6366F1] text-white"
@@ -200,7 +246,11 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
               </label>
 
               <label
-                onClick={() => setIsPrivate(true)}
+                    onClick={() => {
+                      if (!organization) setIsPrivate(true);
+                    }}
+                    aria-disabled={Boolean(organization)}
+                    title={organization ? "Les dépôts associés doivent être publics." : undefined}
                 className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
                   isPrivate
                     ? "bg-[#6366F1]/10 border-[#6366F1] text-white"
@@ -216,6 +266,7 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
                 </div>
               </label>
             </div>
+            {organization && <p className="text-[11px] text-[#A1A1AA]">Les dépôts associés à une organisation doivent être publics. Le dépôt sera créé sous votre compte puis rattaché à cette organisation.</p>}
           </div>
 
           {/* Checkbox initialize with README */}
@@ -236,10 +287,10 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
           <div className="pt-4 border-t border-[#27272A] flex justify-end">
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoadingOrganization || Boolean(organizationSlug && !organization) || (!isDemoMode && (!isAuthenticated || authLoading))}
               className="flex items-center gap-2 rounded-xl bg-[#6366F1] px-5 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-md hover:bg-[#4F46E5] transition-all disabled:opacity-50"
             >
-              {isSubmitting ? "Création du dépôt..." : "Créer le dépôt"}
+              {isSubmitting ? "Création du dépôt..." : organization ? "Créer et associer le dépôt" : "Créer le dépôt"}
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>

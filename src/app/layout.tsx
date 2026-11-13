@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
 import { SearchModal } from "@/components/layout/SearchModal";
 import { StoreHydration } from "@/components/layout/StoreHydration";
+import { AuthGuard } from "@/components/layout/AuthGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,7 +38,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-(--primary-text)">
         <StoreHydration />
         <Navbar />
-        <main className="flex-1 pb-20 md:pb-0">{children}</main>
+        <main className="flex-1 pb-20 md:pb-0">
+          <AuthGuard>{children}</AuthGuard>
+        </main>
         <SearchModal />
       </body>
     </html>

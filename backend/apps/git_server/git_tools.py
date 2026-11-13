@@ -1,13 +1,20 @@
-import pygit2
+from __future__ import annotations
 
 def rename_master_to_main(repo : pygit2.Repository) -> None:
-  if 'master' in repo.branches:
-    master_ref = repo.lookup_reference('refs/heads/master')
-    master_ref.rename('refs/heads/main', force=True)
-    repo.set_head('refs/heads/main')
+    import pygit2
+
+    if 'master' in repo.branches:
+        master_ref = repo.lookup_reference('refs/heads/master')
+        master_ref.rename('refs/heads/main', force=True)
+        repo.set_head('refs/heads/main')
 
 # Init a repo 
 def init_repo(repo_path : str, author_name : str, author_email : str, readme_text : str | None = None, license_text : str | None = None, gitignore : str | None = None) -> pygit2.Repository:
+    try:
+        import pygit2
+    except ImportError as error:
+        raise RuntimeError('pygit2 is required to initialize Git repositories.') from error
+
     repo = pygit2.init_repository(repo_path, bare=True)
     rename_master_to_main(repo)
     
@@ -30,8 +37,9 @@ def init_repo(repo_path : str, author_name : str, author_email : str, readme_tex
         builder.insert('.gitignore', gitignore_blob, pygit2.GIT_FILEMODE_BLOB)
         files_count += 1
 
-    # Return if no files content given
+    # Keep an unborn main branch when the repository has no initial files.
     if not files_count:
+        repo.set_head('refs/heads/main')
         return repo
         
     # Write the tree to the repository
@@ -41,10 +49,13 @@ def init_repo(repo_path : str, author_name : str, author_email : str, readme_tex
     author = pygit2.Signature(author_name, author_email)
     committer = pygit2.Signature(author_name, author_email)
     
-    repo.create_commit('refs/heads/main', author, committer, 'Commit initial', tree_oid)
+    repo.create_commit('refs/heads/main', author, committer, 'Commit initial', tree_oid, [])
+    return repo
     
 # Get the repo metadata
 def get_repo_metadata(repo : pygit2.Repository) -> dict:
+    import pygit2
+
     locals_branches = list(repo.branches.local)
     
     commits : list[dict] = []

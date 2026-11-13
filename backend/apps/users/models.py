@@ -42,7 +42,8 @@ class User(AbstractUser):
         TRANSLATOR = 'translator', "Traducteur ou traductrice"
         OTHER = 'other', "Autre"
         
-    expertise_domain = models.CharField(max_length=60, choices=Domain.choices)
+    email = models.EmailField(unique=True)
+    expertise_domain = models.CharField(max_length=60, choices=Domain.choices, default=Domain.OTHER)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -59,9 +60,9 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     profile_img = models.ImageField(upload_to='user/profiles_images/', null=True, blank=True)
     bio = models.TextField(null=True, blank=True)
-    site_url = models.URLField(max_length=30, null=True, blank=True)
+    site_url = models.URLField(max_length=2048, null=True, blank=True)
     location = models.CharField(max_length=100, null=True, blank=True)
-    updated_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         verbose_name = "Profile utilisateur"
@@ -143,4 +144,23 @@ class IgnoredRepo(models.Model):
         
     def __str__(self) -> str:
         return f"Ignore {self.repo}"
+
+
+class Follow(models.Model):
+    follower = models.ForeignKey(User, on_delete=models.CASCADE, related_name="following_links")
+    followed = models.ForeignKey(User, on_delete=models.CASCADE, related_name="follower_links")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["follower", "followed"], name="unique_user_follow"),
+            models.CheckConstraint(
+                condition=~models.Q(follower=models.F("followed")),
+                name="user_cannot_follow_self",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.follower} suit {self.followed}"
     

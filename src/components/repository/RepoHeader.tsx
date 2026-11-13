@@ -13,13 +13,10 @@ import {
   CircleDot,
   GitPullRequest,
   Settings,
-  Copy,
-  Check,
-  Download,
 } from "lucide-react";
 import { Repository } from "@/types";
 import { useAfriHubStore } from "@/lib/store";
-import { mockCommits } from "@/lib/mock-data";
+import { repositoryService } from "@/services/repository.service";
 
 interface RepoHeaderProps {
   repository: Repository;
@@ -27,36 +24,69 @@ interface RepoHeaderProps {
 
 export function RepoHeader({ repository }: RepoHeaderProps) {
   const pathname = usePathname();
-  const { toggleStarRepo, issues, pullRequests } = useAfriHubStore();
-  const [showCloneDropdown, setShowCloneDropdown] = useState(false);
-  const [cloneMode, setCloneMode] = useState<"https" | "ssh">("https");
-  const [copied, setCopied] = useState(false);
+  const { toggleStarRepo } = useAfriHubStore();
+  const [interaction, setInteraction] = useState<{
+    repositoryId: string;
+    isStarred: boolean;
+    starsCount: number;
+    isWatching: boolean;
+    watchersCount: number;
+  } | null>(null);
+  const [isUpdating, setIsUpdating] = useState<"star" | "watch" | null>(null);
+  const [actionError, setActionError] = useState("");
 
   const basePath = `/${repository.owner.username}/${repository.name}`;
-
-  const cloneUrl =
-    cloneMode === "https"
-      ? `https://metafrix.dev/${repository.owner.username}/${repository.name}.git`
-      : `git@metafrix.dev:${repository.owner.username}/${repository.name}.git`;
-  const repoIssues = issues.filter((issue) => issue.repositoryId === repository.id);
-  const repoPullRequests = pullRequests.filter(
-    (pullRequest) => pullRequest.repositoryId === repository.id
-  );
-  const commitCount = mockCommits.filter((commit) => commit.repositoryId === repository.id).length;
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const currentInteraction = interaction?.repositoryId === repository.id ? interaction : null;
+  const isStarred = currentInteraction?.isStarred ?? repository.isStarred ?? false;
+  const starsCount = currentInteraction?.starsCount ?? repository.starsCount;
+  const isWatching = currentInteraction?.isWatching ?? repository.isWatching ?? false;
+  const watchersCount = currentInteraction?.watchersCount ?? repository.watchersCount;
 
   const tabs = [
     { label: "Code", href: basePath, icon: Code2, count: null },
-    { label: "Commits", href: `${basePath}/commits`, icon: GitCommit, count: commitCount },
-    { label: "Issues", href: `${basePath}/issues`, icon: CircleDot, count: repoIssues.filter((issue) => issue.status === "open").length },
-    { label: "Pull Requests", href: `${basePath}/pulls`, icon: GitPullRequest, count: repoPullRequests.filter((pullRequest) => pullRequest.status === "open").length },
+    { label: "Commits", href: `${basePath}/commits`, icon: GitCommit, count: null },
+    { label: "Issues", href: `${basePath}/issues`, icon: CircleDot, count: repository.issuesCount },
+    { label: "Pull Requests", href: `${basePath}/pulls`, icon: GitPullRequest, count: repository.pullsCount },
     { label: "Paramètres", href: `${basePath}/settings`, icon: Settings, count: null },
   ];
 
-  const copyCloneUrl = () => {
-    navigator.clipboard.writeText(cloneUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  const updateRelation = async (relation: "star" | "watch") => {
+    if (isUpdating) return;
+    setActionError("");
+    setIsUpdating(relation);
+    const nextStarred = relation === "star" ? !isStarred : isStarred;
+    const nextWatching = relation === "watch" ? !isWatching : isWatching;
+    try {
+      const starResult = relation === "star"
+        ? isDemoMode
+          ? { isStarred: nextStarred, starsCount: Math.max(0, starsCount + (nextStarred ? 1 : -1)) }
+          : await repositoryService.setRepositoryStarred(repository.id, nextStarred)
+        : { isStarred: nextStarred, starsCount };
+      const watchResult = relation === "watch"
+        ? isDemoMode
+          ? { isWatching: nextWatching, watchersCount: Math.max(0, watchersCount + (nextWatching ? 1 : -1)) }
+          : await repositoryService.setRepositoryWatching(repository.id, nextWatching)
+        : { isWatching: nextWatching, watchersCount };
+
+      if (isDemoMode && relation === "star") toggleStarRepo(repository.id);
+      setInteraction({
+        repositoryId: repository.id,
+        isStarred: starResult.isStarred,
+        starsCount: starResult.starsCount,
+        isWatching: watchResult.isWatching,
+        watchersCount: watchResult.watchersCount,
+      });
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      setActionError(
+        status === 401
+          ? "Connectez-vous pour suivre ou étoiler ce dépôt."
+          : "Cette action est temporairement indisponible.",
+      );
+    } finally {
+      setIsUpdating(null);
+    }
   };
 
   return (
@@ -87,13 +117,24 @@ export function RepoHeader({ repository }: RepoHeaderProps) {
           {/* Action buttons: Watch, Fork, Star, Code Clone */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {/* Watch */}
-            <button type="button" className="ui-button ui-button-secondary px-3 py-1.5 text-xs">
+            <button
+              type="button"
+              aria-pressed={isWatching}
+              disabled={isUpdating !== null}
+              onClick={() => void updateRelation("watch")}
+              className="ui-button ui-button-secondary px-3 py-1.5 text-xs disabled:opacity-60"
+            >
               <Eye className="h-3.5 w-3.5" />
-              <span>Suivre ({repository.watchersCount})</span>
+              <span>{isWatching ? "Ne plus suivre" : "Suivre"} ({watchersCount})</span>
             </button>
 
             {/* Fork */}
-            <button type="button" className="ui-button ui-button-secondary px-3 py-1.5 text-xs">
+            <button
+              type="button"
+              disabled
+              title="Le fork Git n’est pas encore disponible."
+              className="ui-button ui-button-secondary cursor-not-allowed px-3 py-1.5 text-xs opacity-60"
+            >
               <GitFork className="h-3.5 w-3.5" />
               <span>Fork ({repository.forksCount})</span>
             </button>
@@ -101,97 +142,27 @@ export function RepoHeader({ repository }: RepoHeaderProps) {
             {/* Star */}
             <button
               type="button"
-              onClick={() => toggleStarRepo(repository.id)}
-              className="ui-button ui-button-secondary px-3 py-1.5 text-xs"
+              aria-pressed={isStarred}
+              disabled={isUpdating !== null}
+              onClick={() => void updateRelation("star")}
+              className="ui-button ui-button-secondary px-3 py-1.5 text-xs disabled:opacity-60"
             >
-              <Star className="h-3.5 w-3.5 fill-current" />
-              <span>Star ({repository.starsCount})</span>
+              <Star className={`h-3.5 w-3.5 ${isStarred ? "fill-current" : ""}`} />
+              <span>{isStarred ? "Étoilé" : "Ajouter étoile"} ({starsCount})</span>
             </button>
 
-            {/* Code / Clone Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                aria-expanded={showCloneDropdown}
-                aria-haspopup="true"
-                onClick={() => setShowCloneDropdown(!showCloneDropdown)}
-                className="ui-button ui-button-primary px-3.5 py-1.5 text-xs"
-              >
-                <Code2 className="h-3.5 w-3.5" />
-                <span>Code</span>
-              </button>
-
-              {showCloneDropdown && (
-                <div
-                  role="dialog"
-                  aria-label="Cloner ou télécharger le dépôt"
-                  className="ui-menu absolute right-0 z-30 mt-2 w-80 p-4 text-xs animate-in fade-in"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="mb-3 flex items-center gap-2 border-b border-[#30363d] pb-2">
-                    <button
-                      type="button"
-                      aria-pressed={cloneMode === "https"}
-                      onClick={() => setCloneMode("https")}
-                      className={`font-semibold pb-1 border-b-2 transition-all ${
-                        cloneMode === "https"
-                          ? "border-[#2f81f7] text-[#e6edf3]"
-                          : "border-transparent text-[#8b949e] hover:text-[#e6edf3]"
-                      }`}
-                    >
-                      HTTPS
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={cloneMode === "ssh"}
-                      onClick={() => setCloneMode("ssh")}
-                      className={`font-semibold pb-1 border-b-2 transition-all ${
-                        cloneMode === "ssh"
-                          ? "border-[#2f81f7] text-[#e6edf3]"
-                          : "border-transparent text-[#8b949e] hover:text-[#e6edf3]"
-                      }`}
-                    >
-                      SSH
-                    </button>
-                  </div>
-
-                  <div className="ui-field flex items-center gap-1.5 p-1.5">
-                    <input
-                      type="text"
-                      aria-label="URL de clonage"
-                      readOnly
-                      value={cloneUrl}
-                      className="bg-transparent text-[11px] font-mono text-zinc-300 w-full outline-none select-all"
-                    />
-                    <button
-                      type="button"
-                      aria-label={copied ? "URL copiée" : "Copier l’URL"}
-                      onClick={copyCloneUrl}
-                      className="ui-button ui-button-quiet shrink-0 p-1.5"
-                      title="Copier l'URL"
-                    >
-                      {copied ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="mt-3 border-t border-[#30363d] pt-3">
-                    <a
-                      href={`https://metafrix.dev/archive/${repository.name}.zip`}
-                      className="flex items-center gap-2 py-1 text-[#c9d1d9] transition-colors hover:text-[#e6edf3]"
-                    >
-                      <Download className="h-3.5 w-3.5 text-[#8b949e]" />
-                      <span>Télécharger le code ZIP</span>
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              disabled
+              title="Le clonage Git et le téléchargement ZIP ne sont pas encore disponibles."
+              className="ui-button ui-button-primary cursor-not-allowed px-3.5 py-1.5 text-xs opacity-60"
+            >
+              <Code2 className="h-3.5 w-3.5" />
+              <span>Git bientôt</span>
+            </button>
           </div>
         </div>
+        {actionError && <p role="alert" className="pb-3 text-xs text-rose-300">{actionError}</p>}
 
         {/* Tab Navigation */}
         <nav aria-label="Navigation du dépôt" className="flex items-center gap-1 overflow-x-auto scrollbar-none">

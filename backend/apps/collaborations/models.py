@@ -1,9 +1,14 @@
 from django.db import models
 from django.conf import settings
+from django.utils.text import slugify
 
 # Organisation model
 class Organisation(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True, blank=True)
+    description = models.TextField(blank=True, default="")
+    website = models.URLField(max_length=2048, blank=True, default="")
+    location = models.CharField(max_length=160, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.DO_NOTHING)
     image_profile = models.ImageField(upload_to='organisations/images/', null=True, blank=True) 
@@ -13,6 +18,48 @@ class Organisation(models.Model):
         
     def __str__(self) -> str:
         return f"{self.name} | {self.created_by}"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.name)[:90] or "organisation"
+            candidate = base_slug
+            suffix = 2
+            while Organisation.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
+                candidate = f"{base_slug[:90]}-{suffix}"
+                suffix += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
+
+
+class OrganisationMembership(models.Model):
+    class Role(models.TextChoices):
+        OWNER = "owner", "Propriétaire"
+        ADMIN = "admin", "Administrateur"
+        MEMBER = "member", "Membre"
+
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organisation_memberships")
+    role = models.CharField(max_length=10, choices=Role.choices, default=Role.MEMBER)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["organisation", "user"], name="unique_organisation_member"),
+        ]
+
+
+class OrganisationRepository(models.Model):
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name="repository_links")
+    repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE, related_name="organisation_links")
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organisation_repository_links")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["organisation", "repository"], name="unique_repository_per_organisation"),
+        ]
 
 # Team model
 class Team(models.Model):

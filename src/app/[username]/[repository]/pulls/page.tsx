@@ -1,14 +1,16 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { GitPullRequest, GitMerge, Plus, Eye, Code, X } from "lucide-react";
 import { RepoHeader } from "@/components/repository/RepoHeader";
 import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
+import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAfriHubStore } from "@/lib/store";
-import { mockCodeDiff } from "@/lib/mock-data";
+import { useRepository } from "@/hooks/useRepository";
+import { repositoryService } from "@/services/repository.service";
 import { formatDate } from "@/lib/utils";
-import type { Repository } from "@/types";
+import type { PullRequest, Repository } from "@/types";
 
 interface PageProps {
   params: Promise<{
@@ -20,13 +22,11 @@ interface PageProps {
 export default function PullRequestsPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const { username, repository: repoName } = resolvedParams;
-  const { repositories } = useAfriHubStore();
+  const { repository: repo, isLoading, error } = useRepository(username, repoName);
 
-  const repo = repositories.find(
-    (item) =>
-      item.name.toLowerCase() === repoName.toLowerCase() &&
-      item.owner.username.toLowerCase() === username.toLowerCase()
-  );
+  if (isLoading) return <div className="mx-auto max-w-5xl px-4 py-16 text-sm text-[#A1A1AA]">Chargement du dépôt…</div>;
+
+  if (!repo && error) return <RepositoryUnavailable message={error} />;
 
   if (!repo) {
     return <RepositoryNotFound username={username} repository={repoName} />;
@@ -36,7 +36,10 @@ export default function PullRequestsPage({ params }: PageProps) {
 }
 
 function PullRequestsContent({ repository }: { repository: Repository }) {
-  const { pullRequests, addPullRequest } = useAfriHubStore();
+  const { pullRequests: demoPullRequests, addPullRequest } = useAfriHubStore();
+  const [serverPullRequests, setServerPullRequests] = useState<PullRequest[]>([]);
+  const [requestError, setRequestError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"open" | "merged">("open");
   const [showNewModal, setShowNewModal] = useState(false);
   const [title, setTitle] = useState("");
@@ -44,31 +47,58 @@ function PullRequestsContent({ repository }: { repository: Repository }) {
   const [sourceBranch, setSourceBranch] = useState("feature/new-feature");
   const [selectedPRId, setSelectedPRId] = useState<string | null>(null);
 
-  const repoPullRequests = pullRequests.filter(
-    (pullRequest) => pullRequest.repositoryId === repository.id
-  );
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  useEffect(() => {
+    let active = true;
+    void repositoryService.getPullRequests(repository.id)
+      .then((items) => {
+        if (active) setServerPullRequests(items);
+      })
+      .catch(() => {
+        if (active) setRequestError("Impossible de charger les pull requests du dépôt.");
+      });
+    return () => { active = false; };
+  }, [repository.id]);
+
+  const repoPullRequests = isDemoMode
+    ? demoPullRequests.filter((pullRequest) => pullRequest.repositoryId === repository.id)
+    : serverPullRequests;
   const openPRs = repoPullRequests.filter((pullRequest) => pullRequest.status === "open");
   const mergedPRs = repoPullRequests.filter((pullRequest) => pullRequest.status === "merged");
   const filteredPullRequests = repoPullRequests.filter(
     (pullRequest) => pullRequest.status === activeFilter
   );
+  const selectedPullRequest = repoPullRequests.find((pullRequest) => pullRequest.id === selectedPRId);
 
-  const handleCreatePR = (e: React.FormEvent) => {
+  const handleCreatePR = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isSubmitting) return;
 
-    addPullRequest({
-      repositoryId: repository.id,
+    const data = {
       title: title.trim(),
       body: body.trim(),
-      sourceBranch,
+      sourceBranch: sourceBranch.trim(),
       targetBranch: repository.defaultBranch,
-    });
-
-    setTitle("");
-    setBody("");
-    setActiveFilter("open");
-    setShowNewModal(false);
+    };
+    setIsSubmitting(true);
+    setRequestError("");
+    try {
+      if (isDemoMode) {
+        addPullRequest({ repositoryId: repository.id, ...data });
+      } else {
+        const created = await repositoryService.createPullRequest(repository.id, data);
+        setServerPullRequests((existing) => [created, ...existing]);
+      }
+      setTitle("");
+      setBody("");
+      setActiveFilter("open");
+      setShowNewModal(false);
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      setRequestError(detail || "La création de la pull request a échoué.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -76,6 +106,10 @@ function PullRequestsContent({ repository }: { repository: Repository }) {
       <RepoHeader repository={repository} />
 
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        {requestError && <p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-300">{requestError}</p>}
+        <p role="status" className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-200">
+          Les pull requests sont enregistrées comme métadonnées. Le diff Git, la revue et la fusion ne sont pas encore disponibles.
+        </p>
         {/* Top Action Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -192,9 +226,10 @@ function PullRequestsContent({ repository }: { repository: Repository }) {
                   </button>
                   <button
                     type="submit"
+                    disabled={isSubmitting}
                     className="ui-button ui-button-primary px-4 py-2 text-xs"
                   >
-                    Créer la Pull Request
+                    {isSubmitting ? "Création…" : "Créer la Pull Request"}
                   </button>
                 </div>
               </form>
@@ -202,14 +237,14 @@ function PullRequestsContent({ repository }: { repository: Repository }) {
           </div>
         )}
 
-        {/* Selected PR Diff View */}
-        {selectedPRId && (
+        {/* Actual pull request details; no synthetic diff is shown. */}
+        {selectedPullRequest && (
           <div className="space-y-4 animate-in fade-in">
             <div className="flex items-center justify-between p-4 rounded-xl bg-[#111113] border border-[#27272A]">
               <div className="flex items-center gap-2">
                 <Code className="h-4 w-4 text-[#818CF8]" />
                 <span className="text-xs font-semibold text-white">
-                  Comparaison des différences de code (Diff)
+                  #{selectedPullRequest.number} · {selectedPullRequest.title}
                 </span>
               </div>
               <button
@@ -220,52 +255,14 @@ function PullRequestsContent({ repository }: { repository: Repository }) {
                 Fermer l&apos;inspecteur
               </button>
             </div>
-
-            {mockCodeDiff.map((diff) => (
-              <div
-                key={diff.filename}
-                className="rounded-2xl bg-[#0c0c0e] border border-[#27272A] overflow-hidden"
-              >
-                <div className="flex items-center justify-between px-4 py-2.5 bg-[#18181B] border-b border-[#27272A] text-xs font-mono">
-                  <span className="text-white font-medium">{diff.filename}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-emerald-400">+{diff.additions}</span>
-                    <span className="text-rose-400">-{diff.deletions}</span>
-                  </div>
-                </div>
-
-                {/* Diff Lines Table */}
-                <div className="overflow-x-auto p-2 text-xs font-mono leading-relaxed">
-                  <table className="w-full border-collapse">
-                    <tbody>
-                      {diff.hunks[0].lines.map((line, idx) => (
-                        <tr
-                          key={idx}
-                          className={`${
-                            line.type === "add"
-                              ? "bg-emerald-500/15 text-emerald-300"
-                              : line.type === "delete"
-                              ? "bg-rose-500/15 text-rose-300 line-through"
-                              : "text-zinc-400"
-                          }`}
-                        >
-                          <td className="w-10 select-none pr-3 text-right text-zinc-600 text-[11px]">
-                            {line.oldLineNumber || " "}
-                          </td>
-                          <td className="w-10 select-none pr-3 text-right text-zinc-600 text-[11px]">
-                            {line.newLineNumber || " "}
-                          </td>
-                          <td className="w-6 select-none text-center">
-                            {line.type === "add" ? "+" : line.type === "delete" ? "-" : " "}
-                          </td>
-                          <td className="whitespace-pre py-0.5">{line.content}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
+            <div className="rounded-xl border border-[#27272A] bg-[#111113] p-5">
+              <p className="whitespace-pre-wrap text-sm text-zinc-300">
+                {selectedPullRequest.body || "Aucune description fournie."}
+              </p>
+              <p className="mt-4 border-t border-[#27272A] pt-3 text-xs text-[#A1A1AA]">
+                Aperçu des différences et fusion Git non disponibles pour le moment.
+              </p>
+            </div>
           </div>
         )}
 
@@ -316,19 +313,15 @@ function PullRequestsContent({ repository }: { repository: Repository }) {
                 </div>
               </div>
 
-              {/* View Diff Button & Stats */}
+              {/* Actual diff statistics are not computed yet. */}
               <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                <div className="text-xs font-mono text-right">
-                  <span className="text-emerald-400">+{pr.additions}</span>{" "}
-                  <span className="text-rose-400">-{pr.deletions}</span>
-                </div>
                 <button
                   type="button"
                   onClick={() => setSelectedPRId(pr.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181B] border border-[#27272A] text-xs font-medium text-zinc-300 hover:text-white hover:bg-[#27272A] transition-colors"
                 >
                   <Eye className="h-3.5 w-3.5" />
-                  <span>Voir le Diff</span>
+                  <span>Voir les détails</span>
                 </button>
               </div>
             </div>

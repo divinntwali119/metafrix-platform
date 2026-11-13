@@ -1,8 +1,13 @@
 import json
+import re
+import shutil
 from datetime import date
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 
 from apps.git_server.git_tools import init_repo
@@ -57,16 +62,32 @@ def create_gitignore_from_template(gitignore_template: str | None) -> str | None
     return gitignore_text
 
 
-def create_repo_from_data(user: AbstractUser, data: dict[str, Any]) -> None:
-    author_name = user.get_full_name()
-    license_template = data.get('licenseTemplate')
-    gitignore_template = data.get('gitignoreTemplate')
+def create_repo_from_data(user: AbstractUser, data: dict[str, Any]) -> Path:
+    name = str(data.get('name', ''))
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,119}', name) or '..' in name:
+        raise ValueError('Invalid repository name.')
 
-    init_repo(
-        f'var/git/repos/{user.username}/{data.get("name")}',
-        author_name=author_name,
-        author_email=user.email,
-        readme_text=data.get('description'),
-        license_text=create_formatted_license(license_template, author_name),
-        gitignore=create_gitignore_from_template(gitignore_template),
-    )
+    repository_root = Path(settings.GIT_REPOSITORY_ROOT).resolve()
+    repo_path = (repository_root / str(user.pk) / name).resolve()
+    if not repo_path.is_relative_to(repository_root):
+        raise ValueError('Repository path escapes the configured storage directory.')
+    if repo_path.exists():
+        raise FileExistsError('A Git repository already exists at this path.')
+
+    author_name = user.get_full_name().strip() or user.get_username()
+    readme_text = None
+    if data.get('initializeReadme', True):
+        description = str(data.get('description') or '').strip()
+        readme_text = f'# {name}\n' + (f'\n{description}\n' if description else '')
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        init_repo(
+            str(repo_path),
+            author_name=author_name,
+            author_email=user.email or f'{user.get_username()}@localhost',
+            readme_text=readme_text,
+        )
+    except Exception:
+        shutil.rmtree(repo_path, ignore_errors=True)
+        raise
+    return repo_path

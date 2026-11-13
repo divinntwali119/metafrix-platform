@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import {
   Bell,
   Check,
@@ -62,8 +62,7 @@ export default function SettingsPage() {
 }
 
 function SettingsForm({ currentUser }: { currentUser: User }) {
-  const { updateProfile, preferences, updatePreferences, theme, setTheme } =
-    useAfriHubStore();
+  const { updateProfile, theme, setTheme } = useAfriHubStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [isSaved, setIsSaved] = useState(false);
   const [formError, setFormError] = useState("");
@@ -72,14 +71,8 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
   const [bio, setBio] = useState(currentUser.bio);
   const [location, setLocation] = useState(currentUser.location || "");
   const [website, setWebsite] = useState(currentUser.website || "");
-  const [github, setGithub] = useState(currentUser.githubUrl || "");
-  const [twitter, setTwitter] = useState(currentUser.twitterUrl || "");
-  const [email, setEmail] = useState(currentUser.email || "");
-  const [phone, setPhone] = useState(currentUser.phone || "");
-  const [avatar, setAvatar] = useState(currentUser.avatar);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const avatarInputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef<Partial<Record<SettingsTab, HTMLButtonElement>>>({});
 
   const selectTab = (tab: SettingsTab) => {
@@ -113,29 +106,6 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
     tabRefs.current[nextTab]?.focus();
   };
 
-  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setFormError("Sélectionnez un fichier image valide.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setFormError("L'image doit faire moins de 2 Mo.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setAvatar(reader.result);
-        setFormError("");
-        setIsSaved(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
@@ -146,8 +116,8 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
         setFormError("Renseignez le mot de passe actuel et le nouveau mot de passe.");
         return;
       }
-      if (newPassword.length < 8) {
-        setFormError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+      if (newPassword.length < 10) {
+        setFormError("Le nouveau mot de passe doit contenir au moins 10 caractères.");
         return;
       }
 
@@ -168,20 +138,39 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
       return;
     }
 
-    updateProfile({
-      name: name.trim(),
-      bio: bio.trim(),
-      location: location.trim(),
-      website: website.trim() || undefined,
-      githubUrl: github.trim() || undefined,
-      twitterUrl: twitter.trim() || undefined,
-      email: email.trim(),
-      phone: phone.trim() || undefined,
-      avatar,
-    });
-    setIsSaved(true);
-    window.setTimeout(() => setIsSaved(false), 2500);
+    if (activeTab === "profile") {
+      setIsSaving(true);
+      try {
+        const updatedUser = await authService.updateProfile({
+          name: name.trim(),
+          bio: bio.trim(),
+          location: location.trim(),
+          website: website.trim(),
+        });
+        updateProfile(updatedUser);
+        setName(updatedUser.name);
+        setBio(updatedUser.bio);
+        setLocation(updatedUser.location || "");
+        setWebsite(updatedUser.website || "");
+        setIsSaved(true);
+        window.setTimeout(() => setIsSaved(false), 2500);
+      } catch {
+        setFormError("Le profil n’a pas pu être enregistré. Réessayez plus tard.");
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
+    if (activeTab === "appearance") {
+      setIsSaved(true);
+      window.setTimeout(() => setIsSaved(false), 2500);
+      return;
+    }
+
+    setFormError("Ces paramètres ne sont pas encore disponibles.");
   };
+  const canSave = activeTab === "profile" || activeTab === "security" || activeTab === "appearance";
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 pb-24 sm:px-6 sm:py-8 lg:px-8">
@@ -254,28 +243,22 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                     <span className="h-16 w-16 shrink-0 overflow-hidden rounded-full border border-(--border) bg-(--muted)">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={avatar}
+                        src={currentUser.avatar}
                         alt={currentUser.name}
                         className="ui-avatar h-full w-full object-cover"
                       />
                     </span>
                     <div>
-                      <input
-                        ref={avatarInputRef}
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        onChange={handleAvatarChange}
-                        className="hidden"
-                      />
                       <button
                         type="button"
-                        onClick={() => avatarInputRef.current?.click()}
-                        className="inline-flex min-h-9 items-center rounded-lg border border-(--border) bg-(--muted) px-3 text-xs font-semibold text-(--primary-text) transition-colors hover:border-(--secondary-text)"
+                        disabled
+                        title="Le changement d’avatar n’est pas encore disponible."
+                        className="inline-flex min-h-9 cursor-not-allowed items-center rounded-lg border border-(--border) bg-(--muted) px-3 text-xs font-semibold text-(--primary-text) opacity-60"
                       >
-                        Changer l&apos;avatar
+                        Avatar indisponible
                       </button>
                       <p className="mt-1.5 text-xs text-(--secondary-text)">
-                        JPG, PNG ou WebP · 2 Mo maximum
+                        Le stockage d’avatar n’est pas encore configuré.
                       </p>
                     </div>
                   </div>
@@ -310,15 +293,16 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                         <label htmlFor="settings-github" className="mb-1.5 block text-sm font-medium text-(--primary-text)">
                           GitHub
                         </label>
-                        <input id="settings-github" type="text" value={github} onChange={(event) => setGithub(event.target.value)} className={fieldClassName} />
+                        <input id="settings-github" type="text" value={currentUser.githubUrl || ""} disabled className={`${fieldClassName} cursor-not-allowed opacity-60`} />
                       </div>
                       <div>
                         <label htmlFor="settings-twitter" className="mb-1.5 block text-sm font-medium text-(--primary-text)">
                           Twitter / X
                         </label>
-                        <input id="settings-twitter" type="text" value={twitter} onChange={(event) => setTwitter(event.target.value)} className={fieldClassName} />
+                        <input id="settings-twitter" type="text" value={currentUser.twitterUrl || ""} disabled className={`${fieldClassName} cursor-not-allowed opacity-60`} />
                       </div>
                     </div>
+                    <p className="text-xs text-(--secondary-text)">Les liens sociaux ne sont pas encore enregistrés par le serveur.</p>
                   </div>
                 </div>
               )}
@@ -336,13 +320,14 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                       <label htmlFor="settings-email" className="mb-1.5 block text-sm font-medium text-(--primary-text)">
                         Adresse e-mail principale
                       </label>
-                      <input id="settings-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className={fieldClassName} />
+                      <input id="settings-email" type="email" autoComplete="email" value={currentUser.email || ""} readOnly aria-describedby="email-update-note" className={`${fieldClassName} cursor-not-allowed opacity-60`} />
+                      <p id="email-update-note" className="mt-1.5 text-xs text-(--secondary-text)">La modification d’e-mail nécessite une vérification d’adresse qui n’est pas encore disponible.</p>
                     </div>
                     <div>
                       <label htmlFor="settings-phone" className="mb-1.5 block text-sm font-medium text-(--primary-text)">
                         Numéro de téléphone
                       </label>
-                      <input id="settings-phone" type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+250 788 123 456" className={fieldClassName} />
+                      <input id="settings-phone" type="tel" autoComplete="tel" value="" disabled placeholder="Non disponible" className={`${fieldClassName} cursor-not-allowed opacity-60`} />
                     </div>
                   </div>
                 </div>
@@ -364,20 +349,13 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                       <div>
                         <p className="text-sm font-semibold text-(--primary-text)">Authentification à deux facteurs (2FA)</p>
                         <p className="mt-1 text-xs leading-relaxed text-(--secondary-text)">
-                          Ajoutez une étape de vérification à la connexion.
+                          La 2FA n’est pas encore implémentée pour les connexions.
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Authentification à deux facteurs"
-                      aria-checked={preferences.twoFactorEnabled}
-                      onClick={() => updatePreferences({ twoFactorEnabled: !preferences.twoFactorEnabled })}
-                      className={`inline-flex min-h-9 w-fit items-center rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${preferences.twoFactorEnabled ? "border-(--accent)/40 bg-(--accent)/10 text-(--accent)" : "border-(--border) text-(--secondary-text) hover:bg-(--muted)"}`}
-                    >
-                      {preferences.twoFactorEnabled ? "Activée" : "Désactivée"}
-                    </button>
+                    <span className="rounded-lg border border-(--border) px-3 py-2 text-xs font-semibold text-(--secondary-text)">
+                      Non disponible
+                    </span>
                   </div>
                   <div className="max-w-xl space-y-4">
                     <h3 className="text-sm font-semibold text-(--primary-text)">Changer le mot de passe</h3>
@@ -392,7 +370,7 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                         Nouveau mot de passe
                       </label>
                       <input id="settings-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className={fieldClassName} />
-                      <p className="mt-1.5 text-xs text-(--secondary-text)">8 caractères minimum.</p>
+                      <p className="mt-1.5 text-xs text-(--secondary-text)">10 caractères minimum.</p>
                     </div>
                   </div>
                 </div>
@@ -403,31 +381,16 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                   <div>
                     <h2 className="text-base font-bold text-(--primary-text)">Préférences de notification</h2>
                     <p className="mt-1 text-sm text-(--secondary-text)">
-                      Choisissez les événements pour lesquels vous souhaitez être notifié.
+                      Ces préférences ne sont pas encore enregistrées par le serveur.
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-(--border) p-4 transition-colors hover:bg-(--muted)/40">
-                      <span>
-                        <span className="block text-sm font-medium text-(--primary-text)">Mentions & citations</span>
-                        <span className="mt-1 block text-xs leading-relaxed text-(--secondary-text)">Lorsqu&apos;un développeur vous mentionne (@{currentUser.username})</span>
-                      </span>
-                      <input type="checkbox" checked={preferences.notifyMentions} onChange={(event) => updatePreferences({ notifyMentions: event.target.checked })} className="h-4 w-4 shrink-0 accent-(--accent)" />
-                    </label>
-                    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-(--border) p-4 transition-colors hover:bg-(--muted)/40">
-                      <span>
-                        <span className="block text-sm font-medium text-(--primary-text)">Pull requests & revues de code</span>
-                        <span className="mt-1 block text-xs leading-relaxed text-(--secondary-text)">Demandes de fusion et commentaires sur vos dépôts</span>
-                      </span>
-                      <input type="checkbox" checked={preferences.notifyPRs} onChange={(event) => updatePreferences({ notifyPRs: event.target.checked })} className="h-4 w-4 shrink-0 accent-(--accent)" />
-                    </label>
-                    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-(--border) p-4 transition-colors hover:bg-(--muted)/40">
-                      <span>
-                        <span className="block text-sm font-medium text-(--primary-text)">Résumé hebdomadaire par e-mail</span>
-                        <span className="mt-1 block text-xs leading-relaxed text-(--secondary-text)">Tendances technologiques et projets populaires</span>
-                      </span>
-                      <input type="checkbox" checked={preferences.notifyEmailDigest} onChange={(event) => updatePreferences({ notifyEmailDigest: event.target.checked })} className="h-4 w-4 shrink-0 accent-(--accent)" />
-                    </label>
+                    {["Mentions & citations", "Pull requests & revues de code", "Résumé hebdomadaire par e-mail"].map((label) => (
+                      <div key={label} className="flex items-center justify-between gap-4 rounded-lg border border-(--border) p-4">
+                        <span className="text-sm font-medium text-(--primary-text)">{label}</span>
+                        <span className="text-xs text-(--secondary-text)">Non disponible</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -437,24 +400,16 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                   <div>
                     <h2 className="text-base font-bold text-(--primary-text)">Confidentialité</h2>
                     <p className="mt-1 text-sm text-(--secondary-text)">
-                      Contrôlez la visibilité de vos données et votre statut en ligne.
+                      Ces préférences ne sont pas encore appliquées par le serveur.
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-(--border) p-4 transition-colors hover:bg-(--muted)/40">
-                      <span>
-                        <span className="block text-sm font-medium text-(--primary-text)">Afficher l&apos;adresse e-mail en public</span>
-                        <span className="mt-1 block text-xs leading-relaxed text-(--secondary-text)">Permet aux recruteurs et aux pairs de vous contacter par e-mail</span>
-                      </span>
-                      <input type="checkbox" checked={preferences.publicEmail} onChange={(event) => updatePreferences({ publicEmail: event.target.checked })} className="h-4 w-4 shrink-0 accent-(--accent)" />
-                    </label>
-                    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-(--border) p-4 transition-colors hover:bg-(--muted)/40">
-                      <span>
-                        <span className="block text-sm font-medium text-(--primary-text)">Statut en ligne</span>
-                        <span className="mt-1 block text-xs leading-relaxed text-(--secondary-text)">Indiquer lorsque vous êtes actif sur la messagerie</span>
-                      </span>
-                      <input type="checkbox" checked={preferences.onlineStatus} onChange={(event) => updatePreferences({ onlineStatus: event.target.checked })} className="h-4 w-4 shrink-0 accent-(--accent)" />
-                    </label>
+                    {["Afficher l’adresse e-mail en public", "Statut en ligne"].map((label) => (
+                      <div key={label} className="flex items-center justify-between gap-4 rounded-lg border border-(--border) p-4">
+                        <span className="text-sm font-medium text-(--primary-text)">{label}</span>
+                        <span className="text-xs text-(--secondary-text)">Non disponible</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -518,12 +473,20 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
                   ) : formError ? (
                     <span role="alert" className="text-(--danger)">{formError}</span>
                   ) : (
-                    <span className="text-(--secondary-text)">Vos préférences sont enregistrées automatiquement.</span>
+                    <span className="text-(--secondary-text)">
+                      {activeTab === "profile"
+                        ? "Les champs disponibles sont enregistrés sur votre compte."
+                        : activeTab === "security"
+                          ? "Le changement de mot de passe est appliqué à votre compte."
+                          : activeTab === "appearance"
+                            ? "Le thème est enregistré sur cet appareil."
+                            : "Ces paramètres ne sont pas encore disponibles."}
+                    </span>
                   )}
                 </div>
                 <button
                   type="submit"
-                  disabled={isSaving}
+                  disabled={isSaving || !canSave}
                   className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-(--action) px-4 text-sm font-semibold text-white transition-colors hover:bg-(--action-hover) disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   <Save className="h-4 w-4" aria-hidden="true" />

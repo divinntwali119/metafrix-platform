@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { FormEvent } from "react";
 import {
   Code2,
   FolderGit2,
@@ -12,9 +13,16 @@ import {
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { Post } from "@/types";
+import { socialService } from "@/services/social.service";
+import { getApiErrorMessage } from "@/lib/api-error";
 
-export function CreatePostCard() {
+interface CreatePostCardProps {
+  onCreated?: (post: Post) => void;
+}
+
+export function CreatePostCard({ onCreated }: CreatePostCardProps) {
   const { currentUser, addPost, repositories } = useAfriHubStore();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [content, setContent] = useState("");
   const [postType, setPostType] = useState<Post["type"]>("text");
   const [includeCode, setIncludeCode] = useState(false);
@@ -24,36 +32,61 @@ export function CreatePostCard() {
   const [selectedRepoId, setSelectedRepoId] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [showImageInput, setShowImageInput] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!content.trim() && !codeSnippet.trim()) return;
+    setSubmitError("");
+    if (!content.trim() && !codeSnippet.trim() && !imageUrl.trim()) return;
 
     const selectedRepo = repositories.find((r) => r.id === selectedRepoId);
+    if (postType === "project" && !selectedRepo) {
+      setSubmitError("Sélectionnez un dépôt public à partager.");
+      return;
+    }
 
-    addPost({
-      content,
-      type: postType,
-      codeSnippet:
-        includeCode && codeSnippet.trim()
-          ? {
-              language: codeLang,
-              code: codeSnippet.trim(),
-              filename: codeFilename || `code.${codeLang}`,
-            }
-          : undefined,
-      repositoryRef: selectedRepo
+    setIsSubmitting(true);
+    try {
+      const codePayload = includeCode && codeSnippet.trim()
         ? {
-            id: selectedRepo.id,
-            name: selectedRepo.name,
-            ownerUsername: selectedRepo.owner.username,
-            description: selectedRepo.description,
-            starsCount: selectedRepo.starsCount,
-            language: selectedRepo.language,
+            language: codeLang,
+            code: codeSnippet.trim(),
+            filename: codeFilename || `code.${codeLang}`,
           }
-        : undefined,
-      mediaUrls: imageUrl.trim() ? [imageUrl.trim()] : undefined,
-    });
+        : undefined;
+      if (isDemoMode) {
+        addPost({
+          content,
+          type: postType,
+          codeSnippet: codePayload,
+          repositoryRef: selectedRepo
+            ? {
+                id: selectedRepo.id,
+                name: selectedRepo.name,
+                ownerUsername: selectedRepo.owner.username,
+                description: selectedRepo.description,
+                starsCount: selectedRepo.starsCount,
+                language: selectedRepo.language,
+              }
+            : undefined,
+          mediaUrls: imageUrl.trim() ? [imageUrl.trim()] : undefined,
+        });
+      } else {
+        const createdPost = await socialService.createPost({
+          content: content.trim(),
+          type: postType,
+          codeSnippet: codePayload,
+          repositoryId: selectedRepo?.id,
+          mediaUrl: imageUrl.trim() || undefined,
+        });
+        onCreated?.(createdPost);
+      }
+    } catch (error) {
+      setSubmitError(getApiErrorMessage(error, "La publication n’a pas pu être envoyée. Réessayez."));
+      setIsSubmitting(false);
+      return;
+    }
 
     // Reset
     setContent("");
@@ -64,6 +97,7 @@ export function CreatePostCard() {
     setImageUrl("");
     setShowImageInput(false);
     setPostType("text");
+    setIsSubmitting(false);
   };
 
   return (
@@ -139,7 +173,7 @@ export function CreatePostCard() {
                 className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-1.5 text-[#c9d1d9] outline-none"
               >
                 <option value="">Sélectionner un dépôt à lier...</option>
-                {repositories.map((repo) => (
+                {repositories.filter((repo) => !repo.isPrivate).map((repo) => (
                   <option key={repo.id} value={repo.id}>
                     {repo.owner.username}/{repo.name} ({repo.language})
                   </option>
@@ -243,13 +277,14 @@ export function CreatePostCard() {
 
         <button
           onClick={handleSubmit}
-          disabled={!content.trim() && !codeSnippet.trim()}
+          disabled={isSubmitting || (!content.trim() && !codeSnippet.trim() && !imageUrl.trim())}
           className="ui-button ui-button-primary px-4 py-2 text-xs sm:text-sm"
         >
           <Send className="h-3.5 w-3.5" />
-          <span>Publier</span>
+          <span>{isSubmitting ? "Publication…" : "Publier"}</span>
         </button>
       </div>
+      {submitError && <p className="text-xs text-[#f85149]" role="alert">{submitError}</p>}
     </div>
   );
 }
