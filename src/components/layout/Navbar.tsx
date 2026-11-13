@@ -239,7 +239,7 @@ export function Navbar() {
 
                 <div className="py-1">
                   <Link
-                    href={`/developers/${currentUser.username}`}
+                    href={`/developers/${encodeURIComponent(currentUser.username)}`}
                     className="flex items-center gap-2.5 px-4 py-2 text-[#c9d1d9] transition-colors hover:bg-[#21262d]"
                   >
                     <UserIcon className="h-4 w-4 text-[#8b949e]" />

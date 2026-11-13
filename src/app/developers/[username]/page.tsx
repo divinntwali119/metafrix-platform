@@ -76,26 +76,44 @@ export default function DeveloperProfilePage({ params }: PageProps) {
     if (isDemoMode) return;
     let active = true;
     if (authLoading) return () => { active = false; };
-    void Promise.all([
-      socialService.getDeveloper(username),
-      repositoryService.getRepositories({ owner: username }),
-      socialService.getPosts({ author: username, page: 1 }),
-    ]).then(([profile, profileRepositories, profilePosts]) => {
+    const profileRequest = isAuthenticated && currentUser.username.toLowerCase() === username.toLowerCase()
+      ? Promise.resolve(currentUser)
+      : socialService.getDeveloper(username);
+    void profileRequest.then(async (profile) => {
       if (!active) return;
       setApiUser(profile);
-      setApiRepositories(profileRepositories);
-      setApiPosts(profilePosts.results);
+      setApiError("");
       setLoadedProfileKey(profileKey);
+
+      const [repositoriesResult, postsResult] = await Promise.allSettled([
+        repositoryService.getRepositories({ owner: username }),
+        socialService.getPosts({ author: username, page: 1 }),
+      ]);
+      if (!active) return;
+
+      const failedSections: string[] = [];
+      if (repositoriesResult.status === "fulfilled") {
+        setApiRepositories(repositoriesResult.value);
+      } else {
+        failedSections.push("dépôts");
+      }
+      if (postsResult.status === "fulfilled") {
+        setApiPosts(postsResult.value.results);
+      } else {
+        failedSections.push("publications");
+      }
+      if (failedSections.length) {
+        setApiError(`Le profil est chargé, mais les ${failedSections.join(" et ")} n’ont pas pu être récupérés.`);
+      }
     }).catch((error: unknown) => {
       if (active) {
+        setApiUser(null);
         setApiError(getApiErrorMessage(error, "Le profil n’a pas pu être chargé."));
         setLoadedProfileKey(profileKey);
       }
-    }).finally(() => {
-      if (active) setLoadedProfileKey(profileKey);
     });
     return () => { active = false; };
-  }, [authLoading, isAuthenticated, currentUser.id, isDemoMode, username, profileKey]);
+  }, [authLoading, isAuthenticated, currentUser.id, currentUser.username, currentUser, isDemoMode, username, profileKey]);
 
   const handleFollow = async (profile: User) => {
     if (isDemoMode) {
