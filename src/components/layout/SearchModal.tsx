@@ -20,7 +20,7 @@ interface ApiSearchResults {
 
 export function SearchModal() {
   const router = useRouter();
-  const { isSearchOpen, setIsSearchOpen, repositories, users, posts, issues } = useAfriHubStore();
+  const { isSearchOpen, setIsSearchOpen, repositories, users, posts, issues, currentUser, isAuthenticated } = useAfriHubStore();
   const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [query, setQuery] = useState("");
   const [apiResults, setApiResults] = useState<ApiSearchResults | null>(null);
@@ -140,6 +140,11 @@ export function SearchModal() {
     router.push(url);
   };
 
+  const getDeveloperUrl = (user: Developer) =>
+    isAuthenticated && user.id === currentUser.id
+      ? "/dashboard"
+      : `/developers/${encodeURIComponent(user.username)}`;
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       const firstRepo = filteredRepos[0];
@@ -150,7 +155,7 @@ export function SearchModal() {
 
       const firstUser = filteredUsers[0];
       if (firstUser) {
-        handleSelect(`/developers/${firstUser.username}`);
+        handleSelect(getDeveloperUrl(firstUser));
         return;
       }
 
@@ -271,7 +276,7 @@ export function SearchModal() {
                 {filteredUsers.map((user) => (
                   <button
                     key={user.id}
-                    onClick={() => handleSelect(`/developers/${user.username}`)}
+                    onClick={() => handleSelect(getDeveloperUrl(user))}
                     className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-[#18181B] border border-transparent hover:border-[#27272A] transition-all text-left group"
                   >
                     <div className="flex items-center gap-3">

@@ -24,7 +24,7 @@ interface RepoHeaderProps {
 
 export function RepoHeader({ repository }: RepoHeaderProps) {
   const pathname = usePathname();
-  const { toggleStarRepo } = useAfriHubStore();
+  const { currentUser, isAuthenticated, toggleStarRepo } = useAfriHubStore();
   const [interaction, setInteraction] = useState<{
     repositoryId: string;
     isStarred: boolean;
@@ -36,6 +36,9 @@ export function RepoHeader({ repository }: RepoHeaderProps) {
   const [actionError, setActionError] = useState("");
 
   const basePath = `/${repository.owner.username}/${repository.name}`;
+  const ownerHref = isAuthenticated && repository.owner.id === currentUser.id
+    ? "/dashboard"
+    : `/developers/${encodeURIComponent(repository.owner.username)}`;
   const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const currentInteraction = interaction?.repositoryId === repository.id ? interaction : null;
   const isStarred = currentInteraction?.isStarred ?? repository.isStarred ?? false;
@@ -97,7 +100,7 @@ export function RepoHeader({ repository }: RepoHeaderProps) {
           <div className="flex items-center gap-2.5 flex-wrap">
             <FolderGit2 className="h-5 w-5 text-[#8b949e]" />
             <Link
-              href={`/developers/${repository.owner.username}`}
+              href={ownerHref}
               className="text-base font-medium text-[#2f81f7] hover:underline"
             >
               {repository.owner.username}

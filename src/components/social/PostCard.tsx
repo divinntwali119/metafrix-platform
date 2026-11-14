@@ -56,6 +56,9 @@ export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProp
 
   const postComments = isDemoMode ? comments[post.id] || [] : serverComments;
   const isAuthor = post.author.id === currentUser.id;
+  const authorHref = isAuthor
+    ? "/dashboard"
+    : `/developers/${encodeURIComponent(post.author.username)}`;
 
   const updatePost = (updatedPost: Post) => {
     setPostOverride({ id: initialPost.id, post: updatedPost });
@@ -200,7 +203,7 @@ export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProp
       {/* Header: Author & Options */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href={`/developers/${post.author.username}`}>
+          <Link href={authorHref}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={post.author.avatar}
@@ -211,7 +214,7 @@ export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProp
           <div>
             <div className="flex items-center gap-2">
               <Link
-                href={`/developers/${post.author.username}`}
+                href={authorHref}
                 className="text-sm font-semibold text-[#e6edf3] transition-colors hover:text-[#2f81f7]"
               >
                 {post.author.name}

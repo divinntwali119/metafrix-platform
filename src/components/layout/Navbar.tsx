@@ -239,14 +239,14 @@ export function Navbar() {
 
                 <div className="py-1">
                   <Link
-                    href={`/developers/${encodeURIComponent(currentUser.username)}`}
+                    href="/dashboard"
                     className="flex items-center gap-2.5 px-4 py-2 text-[#c9d1d9] transition-colors hover:bg-[#21262d]"
                   >
                     <UserIcon className="h-4 w-4 text-[#8b949e]" />
                     Votre profil
                   </Link>
                   <Link
-                    href={`/divin/afri-pay-gateway`}
+                    href={`/developers/${encodeURIComponent(currentUser.username)}?tab=repositories`}
                     className="flex items-center gap-2.5 px-4 py-2 text-[#c9d1d9] transition-colors hover:bg-[#21262d]"
                   >
                     <FolderGit2 className="h-4 w-4 text-[#8b949e]" />

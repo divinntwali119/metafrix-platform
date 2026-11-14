@@ -369,6 +369,9 @@ export default function DashboardPage() {
             <Link href="/settings" className="inline-flex items-center gap-1 text-xs font-semibold text-(--accent) hover:underline">
               Modifier mon profil <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
+            <Link href={`/developers/${encodeURIComponent(currentUser.username)}`} className="ml-4 inline-flex items-center gap-1 text-xs font-semibold text-(--accent) hover:underline">
+              Voir mon profil public <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
           </section>
 
           <section className="space-y-4">

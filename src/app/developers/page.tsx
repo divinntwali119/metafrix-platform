@@ -373,6 +373,9 @@ function DeveloperCard({
   isFollowingAction: boolean;
 }) {
   const isCurrentUser = user.id === currentUserId;
+  const profileHref = isCurrentUser
+    ? "/dashboard"
+    : `/developers/${encodeURIComponent(user.username)}`;
 
   return (
     <article className="ui-panel group flex min-h-76 flex-col overflow-hidden transition-colors hover:border-(--secondary-text)">
@@ -383,7 +386,7 @@ function DeveloperCard({
       <div className="flex flex-1 flex-col p-4 sm:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
           <Link
-            href={`/developers/${user.username}`}
+            href={profileHref}
             aria-label={`Voir le profil de ${user.name}`}
             className="shrink-0 rounded-full"
           >
@@ -417,7 +420,7 @@ function DeveloperCard({
         <div className="min-w-0">
           <h3 className="truncate text-base font-bold text-(--primary-text)">
             <Link
-              href={`/developers/${user.username}`}
+              href={profileHref}
               className="transition-colors hover:text-(--accent)"
             >
               {user.name}

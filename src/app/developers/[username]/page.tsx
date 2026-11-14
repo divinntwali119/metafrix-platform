@@ -44,11 +44,20 @@ interface PageProps {
   params: Promise<{
     username: string;
   }>;
+  searchParams: Promise<{
+    tab?: string | string[];
+  }>;
 }
 
-export default function DeveloperProfilePage({ params }: PageProps) {
+type ProfileTab = "overview" | "repositories" | "posts" | "activity";
+
+export default function DeveloperProfilePage({ params, searchParams }: PageProps) {
   const resolvedParams = use(params);
   const { username } = resolvedParams;
+  const requestedTab = use(searchParams).tab;
+  const initialTab: ProfileTab = requestedTab === "repositories" || requestedTab === "posts" || requestedTab === "activity"
+    ? requestedTab
+    : "overview";
   const router = useRouter();
   const {
     users,
@@ -86,7 +95,7 @@ export default function DeveloperProfilePage({ params }: PageProps) {
       setLoadedProfileKey(profileKey);
 
       const [repositoriesResult, postsResult] = await Promise.allSettled([
-        repositoryService.getRepositories({ owner: username }),
+        repositoryService.getRepositories({ owner: username, page_size: 100 }),
         socialService.getPosts({ author: username, page: 1 }),
       ]);
       if (!active) return;
@@ -170,7 +179,9 @@ export default function DeveloperProfilePage({ params }: PageProps) {
 
   return user ? (
     <DeveloperProfileContent
+      key={`${user.id}:${initialTab}`}
       user={user}
+      initialTab={initialTab}
       currentUser={currentUser}
       repositories={isDemoMode ? repositories : apiRepositories}
       posts={isDemoMode ? posts : apiPosts}
@@ -203,6 +214,7 @@ export default function DeveloperProfilePage({ params }: PageProps) {
 
 function DeveloperProfileContent({
   user,
+  initialTab,
   currentUser,
   repositories,
   posts,
@@ -216,6 +228,7 @@ function DeveloperProfileContent({
   onPostDelete,
 }: {
   user: import("@/types").User;
+  initialTab: ProfileTab;
   currentUser: import("@/types").User;
   repositories: import("@/types").Repository[];
   posts: import("@/types").Post[];
@@ -228,7 +241,7 @@ function DeveloperProfileContent({
   onPostUpdate: (post: Post) => void;
   onPostDelete: (postId: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "repositories" | "posts" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
 
   const userRepos = repositories.filter(
     (r) =>
