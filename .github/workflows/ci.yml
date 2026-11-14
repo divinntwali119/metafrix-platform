@@ -45,7 +45,10 @@ jobs:
           --health-retries 5
     env:
       DJANGO_SECRET_KEY: ci-only-not-a-real-secret-key-0123456789-abcdefghijklm
+      AUTH_EXCHANGE_SECRET: ci-only-not-a-real-auth-exchange-secret-0123456789-abcdefghijklm
+      APP_BASE_URL: https://metafrix.example.test
       DJANGO_ALLOWED_HOSTS: localhost,testserver,example.com
+      DJANGO_NUM_PROXIES: "1"
       DATABASE_URL: postgresql://afrihub:ci-only-password@127.0.0.1:5432/afrihub
       DJANGO_CACHE_URL: redis://127.0.0.1:6379/0
     steps:
@@ -111,3 +114,25 @@ jobs:
 
       - name: Build Next.js app
         run: npm run build
+
+  containers:
+    name: Container configuration and image builds
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Validate Compose configuration
+        run: |
+          mkdir -p .secrets
+          for secret in postgres_password django_secret_key auth_exchange_secret smtp_password google_client_secret microsoft_client_secret; do
+            printf 'ci-only-container-test-secret\n' > ".secrets/$secret"
+          done
+          chmod 444 .secrets/*
+          docker compose --env-file .env.docker.example config --quiet
+
+      - name: Build frontend image
+        run: docker build --tag metafrix-frontend:ci --file Dockerfile .
+
+      - name: Build backend image
+        run: docker build --tag metafrix-backend:ci --file backend/Dockerfile backend

@@ -13,6 +13,12 @@ export interface RegisterPayload {
   password: string;
 }
 
+export interface RegisterResponse {
+  verification_required: true;
+  email_sent: boolean;
+  detail: string;
+}
+
 const authFieldLabels: Record<string, string> = {
   name: "Nom complet",
   username: "Nom d’utilisateur",
@@ -89,8 +95,32 @@ export const authService = {
     return postAuth("/api/auth/login/", credentials);
   },
 
-  async register(data: RegisterPayload): Promise<{ user: User }> {
+  async register(data: RegisterPayload): Promise<RegisterResponse> {
     return postAuth("/api/auth/register/", data);
+  },
+
+  async verifyEmail(token: string): Promise<{ detail: string }> {
+    return postAuth("/api/auth/email/verify/", { token });
+  },
+
+  async resendVerificationEmail(email: string): Promise<{ detail: string }> {
+    return postAuth("/api/auth/email/resend-verification/", { email });
+  },
+
+  async requestPasswordReset(email: string): Promise<{ detail: string }> {
+    return postAuth("/api/auth/password/reset/", { email });
+  },
+
+  async confirmPasswordReset(
+    uid: string,
+    token: string,
+    newPassword: string,
+  ): Promise<{ detail: string }> {
+    return postAuth("/api/auth/password/reset/confirm/", {
+      uid,
+      token,
+      new_password: newPassword,
+    });
   },
 
   async getCurrentUser(): Promise<User> {

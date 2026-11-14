@@ -5,7 +5,7 @@ from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import ContactEmail, IgnoredRepo, Profile, Settings, SocialAccount, User
+from .models import ContactEmail, ExternalIdentity, IgnoredRepo, Profile, Settings, SocialAccount, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -22,6 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
     repositoriesCount = serializers.SerializerMethodField()
     contributionsCount = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    emailVerified = serializers.BooleanField(source="is_email_verified", read_only=True)
     isFollowed = serializers.SerializerMethodField()
 
     class Meta:
@@ -31,6 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
             "username",
             "name",
             "email",
+            "emailVerified",
             "avatar",
             "bio",
             "location",
@@ -52,6 +54,7 @@ class UserSerializer(serializers.ModelSerializer):
         is_owner = request and request.user.is_authenticated and request.user.pk == instance.pk
         if not is_owner and not self.context.get("include_email", False):
             representation.pop("email", None)
+            representation.pop("emailVerified", None)
         return representation
 
     def get_name(self, user: User) -> str:
@@ -198,7 +201,41 @@ class RegistrationSerializer(serializers.Serializer):
             first_name=name_parts[0],
             last_name=name_parts[1] if len(name_parts) > 1 else "",
             expertise_domain=User.Domain.OTHER,
+            is_active=False,
+            is_email_verified=False,
         )
+
+
+class OAuthExchangeSerializer(serializers.Serializer):
+    provider = serializers.ChoiceField(choices=ExternalIdentity.Provider.choices)
+    subject = serializers.CharField(max_length=255, trim_whitespace=True)
+    email = serializers.EmailField(max_length=254)
+    email_verified = serializers.BooleanField()
+    name = serializers.CharField(max_length=150, required=False, allow_blank=True, trim_whitespace=True)
+
+    def validate_email(self, value: str) -> str:
+        return value.strip().lower()
+
+
+class EmailAddressSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+
+    def validate_email(self, value: str) -> str:
+        return value.strip().lower()
+
+
+class EmailVerificationSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=128, trim_whitespace=True)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField(max_length=64)
+    token = serializers.CharField(max_length=128, trim_whitespace=True)
+    new_password = serializers.CharField(min_length=10, max_length=128, write_only=True, trim_whitespace=False)
+
+    def validate_new_password(self, value: str) -> str:
+        validate_password(value, user=self.context.get("user"))
+        return value
 
 
 class ProfileSerializer(serializers.ModelSerializer):

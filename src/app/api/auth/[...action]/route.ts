@@ -2,21 +2,33 @@ import { NextResponse } from "next/server";
 
 import {
   isSameOriginMutation,
+  forwardedClientIp,
   requestBackend,
   setAuthCookies,
 } from "@/lib/server/backend-proxy";
 
 interface RouteContext {
-  params: Promise<{ action: string }>;
+  params: Promise<{ action: string[] }>;
 }
+
+const supportedActions = new Set([
+  "login",
+  "register",
+  "password/change",
+  "password/reset",
+  "password/reset/confirm",
+  "email/verify",
+  "email/resend-verification",
+]);
 
 export async function POST(request: Request, { params }: RouteContext) {
   if (!isSameOriginMutation(request)) {
     return NextResponse.json({ detail: "Origine de requête non autorisée." }, { status: 403 });
   }
 
-  const { action } = await params;
-  if (action !== "login" && action !== "register") {
+  const { action: segments } = await params;
+  const action = segments.join("/");
+  if (!supportedActions.has(action)) {
     return NextResponse.json({ detail: "Action d’authentification inconnue." }, { status: 404 });
   }
 
@@ -32,6 +44,7 @@ export async function POST(request: Request, { params }: RouteContext) {
     backendResponse = await requestBackend(`auth/${action}/`, {
       method: "POST",
       body: JSON.stringify(payload),
+      clientIp: forwardedClientIp(request),
     });
   } catch {
     return NextResponse.json(
@@ -47,7 +60,7 @@ export async function POST(request: Request, { params }: RouteContext) {
 
   const tokens = responseData as { access?: string; refresh?: string; user?: unknown };
   if (!tokens.access || !tokens.refresh || !tokens.user) {
-    return NextResponse.json({ detail: "Réponse d’authentification invalide." }, { status: 502 });
+    return NextResponse.json(responseData, { status: backendResponse.status });
   }
 
   const response = NextResponse.json(

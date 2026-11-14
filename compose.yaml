@@ -1,0 +1,206 @@
+name: metafrix
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metafrix}
+      POSTGRES_USER: ${POSTGRES_USER:-metafrix}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-metafrix-backend:local}
+    restart: "no"
+    environment: &backend-environment
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-backend,localhost,127.0.0.1}
+      DJANGO_NUM_PROXIES: "1"
+      APP_BASE_URL: ${APP_BASE_URL:?Set APP_BASE_URL to the public HTTPS application URL}
+      AUTH_EXCHANGE_SECRET_FILE: /run/secrets/auth_exchange_secret
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: ${POSTGRES_DB:-metafrix}
+      POSTGRES_USER: ${POSTGRES_USER:-metafrix}
+      DATABASE_HOST: db
+      DATABASE_PORT: "5432"
+      DJANGO_CACHE_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      DJANGO_MEDIA_ROOT: /var/lib/metafrix/media
+      GIT_REPOSITORY_ROOT: /var/lib/metafrix/git/repos
+      DJANGO_SECURE_SSL_REDIRECT: "True"
+      DJANGO_SECURE_HSTS_SECONDS: ${DJANGO_SECURE_HSTS_SECONDS:-31536000}
+      DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS: ${DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS:-False}
+      DJANGO_SECURE_HSTS_PRELOAD: ${DJANGO_SECURE_HSTS_PRELOAD:-False}
+      DJANGO_TRUST_PROXY_SSL_HEADER: "True"
+      DJANGO_USE_X_FORWARDED_HOST: "True"
+      DJANGO_EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+      DJANGO_EMAIL_HOST: ${DJANGO_EMAIL_HOST:?Set DJANGO_EMAIL_HOST to an authenticated SMTP server}
+      DJANGO_EMAIL_PORT: ${DJANGO_EMAIL_PORT:-587}
+      DJANGO_EMAIL_HOST_USER: ${DJANGO_EMAIL_HOST_USER:?Set DJANGO_EMAIL_HOST_USER for SMTP}
+      DJANGO_EMAIL_HOST_PASSWORD_FILE: /run/secrets/smtp_password
+      DJANGO_EMAIL_USE_TLS: ${DJANGO_EMAIL_USE_TLS:-True}
+      DJANGO_DEFAULT_FROM_EMAIL: ${DJANGO_DEFAULT_FROM_EMAIL:?Set a verified sender address}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${APP_BASE_URL:?Set APP_BASE_URL to the public HTTPS application URL}
+    secrets:
+      - django_secret_key
+      - auth_exchange_secret
+      - postgres_password
+      - smtp_password
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - static_data:/app/staticfiles
+    command: ["/bin/sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && echo 'Database migrations and static collection complete.'"]
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-metafrix-backend:local}
+    restart: unless-stopped
+    environment:
+      <<: *backend-environment
+      PORT: "8000"
+    secrets:
+      - django_secret_key
+      - auth_exchange_secret
+      - postgres_password
+      - smtp_password
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - static_data:/app/staticfiles
+      - media_data:/var/lib/metafrix/media
+      - git_data:/var/lib/metafrix/git/repos
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, urllib.request; from urllib.parse import urlsplit; host=urlsplit(os.environ['APP_BASE_URL']).netloc; req=urllib.request.Request('http://127.0.0.1:8000/api/health/', headers={'X-Forwarded-Proto':'https','X-Forwarded-Host':host}); urllib.request.urlopen(req, timeout=4).read()"
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - data
+      - bff
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${FRONTEND_IMAGE:-metafrix-frontend:local}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      APP_BASE_URL: ${APP_BASE_URL:?Set APP_BASE_URL to the public HTTPS application URL}
+      BACKEND_API_URL: http://backend:8000
+      AUTH_EXCHANGE_SECRET_FILE: /run/secrets/auth_exchange_secret
+      AUTH_COOKIE_SECURE: "true"
+      DJANGO_TRUST_PROXY_SSL_HEADER: "true"
+      NEXT_PUBLIC_DEMO_MODE: "false"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET_FILE: /run/secrets/google_client_secret
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET_FILE: /run/secrets/microsoft_client_secret
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+    secrets:
+      - auth_exchange_secret
+      - google_client_secret
+      - microsoft_client_secret
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - bff
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_data:
+  media_data:
+  git_data:
+
+networks:
+  bff:
+    driver: bridge
+  data:
+    driver: bridge
+    internal: true
+
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR:-.secrets}/postgres_password
+  django_secret_key:
+    file: ${SECRETS_DIR:-.secrets}/django_secret_key
+  auth_exchange_secret:
+    file: ${SECRETS_DIR:-.secrets}/auth_exchange_secret
+  smtp_password:
+    file: ${SECRETS_DIR:-.secrets}/smtp_password
+  google_client_secret:
+    file: ${SECRETS_DIR:-.secrets}/google_client_secret
+  microsoft_client_secret:
+    file: ${SECRETS_DIR:-.secrets}/microsoft_client_secret

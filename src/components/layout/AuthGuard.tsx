@@ -6,7 +6,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/layout/LoadingScreen";
 import { useAfriHubStore } from "@/lib/store";
 
-const publicPrefixes = ["/login", "/register", "/about", "/developers"];
+const publicPrefixes = [
+  "/login",
+  "/register",
+  "/verify-email",
+  "/forgot-password",
+  "/reset-password",
+  "/about",
+  "/developers",
+];
 const privateTopLevelRoutes = new Set([
   "dashboard",
   "feed",

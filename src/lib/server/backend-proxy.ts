@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -13,12 +14,33 @@ function backendBaseUrl(): string {
   return `${baseUrl.replace(/\/+$/, "")}/api/`;
 }
 
+export function authCookieSecure(): boolean {
+  const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
+export function forwardedClientIp(request: Request): string | undefined {
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  const forwardedIp = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
+  const clientIp = realIp || forwardedIp;
+  return clientIp && isIP(clientIp) ? clientIp : undefined;
+}
+
 export function isSameOriginMutation(request: Request): boolean {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
   if (fetchSite === "cross-site") return false;
 
-  const requestOrigin = new URL(request.url).origin;
+  let requestOrigin = new URL(request.url).origin;
+  if (process.env.APP_BASE_URL) {
+    try {
+      requestOrigin = new URL(process.env.APP_BASE_URL).origin;
+    } catch {
+      return false;
+    }
+  }
   if (origin) return origin === requestOrigin;
 
   const referer = request.headers.get("referer");
@@ -38,6 +60,8 @@ export async function requestBackend(
     accessToken?: string;
     search?: string;
     contentType?: string | null;
+    extraHeaders?: HeadersInit;
+    clientIp?: string;
   },
 ): Promise<Response> {
   const headers = new Headers({ Accept: "application/json" });
@@ -47,6 +71,24 @@ export async function requestBackend(
   if (options.accessToken) {
     headers.set("Authorization", `Bearer ${options.accessToken}`);
   }
+  if (options.clientIp && isIP(options.clientIp)) {
+    headers.set("X-Forwarded-For", options.clientIp);
+  }
+  if (process.env.APP_BASE_URL) {
+    try {
+      const publicUrl = new URL(process.env.APP_BASE_URL);
+      headers.set("X-Forwarded-Host", publicUrl.host);
+      if (process.env.DJANGO_TRUST_PROXY_SSL_HEADER?.toLowerCase() === "true") {
+        const protocol = publicUrl.protocol;
+        if (protocol === "https:" || protocol === "http:") {
+          headers.set("X-Forwarded-Proto", protocol.slice(0, -1));
+        }
+      }
+    } catch {
+      // The backend will use its own transport security defaults if the public URL is invalid.
+    }
+  }
+  new Headers(options.extraHeaders).forEach((value, name) => headers.set(name, value));
 
   const normalizedPath = path
     .split("/")
@@ -68,7 +110,7 @@ export async function requestBackend(
 }
 
 export function setAuthCookies(response: NextResponse, tokens: AuthTokens): void {
-  const secure = process.env.NODE_ENV === "production";
+  const secure = authCookieSecure();
   response.cookies.set(ACCESS_COOKIE, tokens.access, {
     httpOnly: true,
     secure,
@@ -89,7 +131,7 @@ export function clearAuthCookies(response: NextResponse): void {
   for (const name of [ACCESS_COOKIE, REFRESH_COOKIE]) {
     response.cookies.set(name, "", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: authCookieSecure(),
       sameSite: "lax",
       path: "/",
       maxAge: 0,
@@ -114,6 +156,7 @@ export async function proxyBackendRequest(
   const cookieStore = await cookies();
   const path = pathSegments.join("/");
   const search = new URL(request.url).search;
+  const clientIp = forwardedClientIp(request);
   let accessToken = cookieStore.get(ACCESS_COOKIE)?.value;
   let refreshToken = cookieStore.get(REFRESH_COOKIE)?.value;
   let body = options.body;
@@ -133,6 +176,7 @@ export async function proxyBackendRequest(
       accessToken,
       search,
       contentType: requestContentType,
+      clientIp,
     });
   } catch {
     return NextResponse.json(
@@ -148,6 +192,7 @@ export async function proxyBackendRequest(
       const refreshResponse = await requestBackend("auth/token/refresh/", {
         method: "POST",
         body: JSON.stringify({ refresh: refreshToken }),
+        clientIp,
       });
       if (refreshResponse.ok) {
         const tokenData = (await refreshResponse.json()) as { access: string; refresh?: string };
@@ -163,6 +208,7 @@ export async function proxyBackendRequest(
           accessToken,
           search,
           contentType: requestContentType,
+          clientIp,
         });
       } else {
         clearCookies = true;

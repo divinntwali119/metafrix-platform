@@ -44,11 +44,16 @@ paginées (`count`, `next`, `previous`, `results`).
 | Méthode | Chemin | Accès / fonction |
 | --- | --- | --- |
 | `GET` | `/health/` | Healthcheck non authentifié; vérifie la connexion à la base sans exposer de détails. |
-| `POST` | `/auth/register/` | Créer un compte; renvoie `user` et des jetons au BFF. |
+| `POST` | `/auth/register/` | Créer un compte inactif/non vérifié; renvoie `verification_required`, `email_sent` et un message générique, sans session. |
 | `POST` | `/auth/login/` | Connexion par username ou e-mail. |
+| `POST` | `/auth/email/verify/` | Consommer le jeton à usage unique de confirmation reçu par e-mail. |
+| `POST` | `/auth/email/resend-verification/` | Renvoyer le message de confirmation; réponse identique si le compte n’existe pas. |
+| `POST` | `/auth/password/reset/` | Demander un lien de récupération; réponse identique si le compte n’existe pas. |
+| `POST` | `/auth/password/reset/confirm/` | Valider le lien et changer le mot de passe; révoque les refresh et access tokens précédemment émis. |
+| `POST` | `/auth/oauth/exchange/` | Échange interne Next → Django protégé par `X-Auth-Exchange-Key`; ne pas exposer directement au navigateur. |
 | `POST` | `/auth/logout/` | Invalider le refresh token courant. |
 | `POST` | `/auth/token/refresh/` | Renouvellement SimpleJWT; appelé côté serveur. |
-| `POST` | `/auth/password/change/` | Modifier un mot de passe authentifié. |
+| `POST` | `/auth/password/change/` | Modifier un mot de passe authentifié; révoque les refresh et access tokens précédemment émis. |
 | `GET`, `PATCH` | `/users/me/` | Lire le compte courant; modifier nom, bio, localisation et site web. E-mail et champs inconnus sont refusés. |
 | `GET`, `POST` | `/repositories/?owner=&search=&page=&page_size=` | Lister/rechercher les dépôts visibles ou créer un dépôt personnel; les dépôts privés ne sortent que pour leur propriétaire. |
 | `GET` | `/repositories/{owner}/{name}/` | Lire un dépôt public ou son propre dépôt privé. |
@@ -110,7 +115,24 @@ un gestionnaire de secrets et l’environnement de la plateforme :
 
 - `DJANGO_SECRET_KEY` : valeur aléatoire longue d’au moins 50 caractères; ne
   jamais réutiliser celle de CI ou d’un exemple.
+- En déploiement Compose, les secrets peuvent être montés en fichiers avec
+  `DJANGO_SECRET_KEY_FILE`, `AUTH_EXCHANGE_SECRET_FILE`,
+  `DJANGO_EMAIL_HOST_PASSWORD_FILE` et `DATABASE_PASSWORD_FILE`; le fichier de
+  PostgreSQL est partagé en lecture seule avec le backend. À défaut, injecter
+  les variantes sans suffixe `_FILE` par un gestionnaire de secrets.
+- `APP_BASE_URL` : URL publique HTTPS du frontend, utilisée pour composer les
+  liens e-mail et OAuth. `AUTH_EXCHANGE_SECRET` doit être un secret partagé
+  distinct d’au moins 50 caractères, identique côté Next et Django.
+- Connexion Google/Microsoft : définir côté Next `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` et
+  au besoin `MICROSOFT_TENANT_ID`. Enregistrer les URI de callback exactes
+  `/api/auth/oauth/google/callback` et
+  `/api/auth/oauth/microsoft/callback` sur les consoles fournisseurs. Ne jamais
+  traiter des boutons OAuth sans ces paramètres comme une connexion active.
 - `DJANGO_ALLOWED_HOSTS` : liste exacte des noms d’hôtes, sans wildcard.
+- `DJANGO_NUM_PROXIES` : nombre de proxies de confiance représentés dans
+  `X-Forwarded-For`; le Compose fourni utilise un seul proxy (le BFF Next). Le
+  reverse proxy public doit écraser l’en-tête client avec son adresse réelle.
 - `DATABASE_URL` : PostgreSQL (`postgresql://…`), sauvegardé et surveillé.
 - `DJANGO_CACHE_URL` : Redis partagé entre processus et instances, de préférence
   TLS (`rediss://`) hors réseau privé de confiance. Il sert notamment au
@@ -132,8 +154,9 @@ un gestionnaire de secrets et l’environnement de la plateforme :
 
 Déployer les assets avec `python manage.py collectstatic --noinput`. Les fichiers
 médias sont encore sur stockage système de fichiers; aucun stockage objet/CDN,
-serveur Git public, rotation automatisée de clés, service de mail de récupération
-ou workflow de vérification d’adresse e-mail n’est fourni.
+serveur Git public ni rotation automatisée de clés n’est fourni. La vérification
+d’adresse et la récupération du mot de passe sont implémentées par e-mail; leur
+fonctionnement en production dépend du SMTP et des URL HTTPS réellement configurés.
 
 ## Tests et contrôles
 
@@ -159,7 +182,8 @@ une procédure d’astreinte ou une validation de staging avant mise en producti
 
 ## Travail restant avant disponibilité complète
 
-- Vérification d’e-mail, récupération de mot de passe, avatar/liens sociaux et préférences persistantes (notification, confidentialité, 2FA).
+- Connexion Google/Microsoft vérifiée côté serveur lorsque les identifiants client, domaines et callbacks OAuth sont configurés; ces identifiants et un test avec les comptes fournisseurs réels restent à fournir pour le déploiement.
+- Avatar/liens sociaux et préférences persistantes (notification, confidentialité, 2FA).
 - Import de médias et d’avatars, temps réel de la messagerie, recherche globale
   d’issues/PR/organisations/messages (les dépôts, développeurs et publications
   sont actuellement recherchables),

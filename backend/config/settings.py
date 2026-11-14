@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import environ
 from django.core.exceptions import ImproperlyConfigured
@@ -12,8 +13,35 @@ local_env_file = BASE_DIR / ".env"
 if local_env_file.exists():
     env.read_env(local_env_file)
 
+
+def read_secret_file(file_path: str, setting_name: str) -> str:
+    try:
+        value = Path(file_path).read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ImproperlyConfigured(f"{setting_name} points to an unreadable secret file.") from error
+    if not value:
+        raise ImproperlyConfigured(f"{setting_name} points to an empty secret file.")
+    return value
+
+
+def read_secret(name: str, default: str = "") -> str:
+    file_path = env.str(f"{name}_FILE", default="").strip()
+    if file_path:
+        return read_secret_file(file_path, f"{name}_FILE")
+    return env.str(name, default=default)
+
+
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
-SECRET_KEY = env.str("DJANGO_SECRET_KEY", default="")
+NUM_PROXIES = env.int("DJANGO_NUM_PROXIES", default=0 if DEBUG else None)
+if not DEBUG and NUM_PROXIES is None:
+    raise ImproperlyConfigured("DJANGO_NUM_PROXIES must match the trusted proxy chain in production.")
+APP_BASE_URL = env.str("APP_BASE_URL", default="http://localhost:3000").rstrip("/")
+AUTH_EXCHANGE_SECRET = read_secret("AUTH_EXCHANGE_SECRET")
+if not DEBUG and not APP_BASE_URL.startswith("https://"):
+    raise ImproperlyConfigured("APP_BASE_URL must use HTTPS outside development.")
+if not DEBUG and len(AUTH_EXCHANGE_SECRET) < 50:
+    raise ImproperlyConfigured("AUTH_EXCHANGE_SECRET must be a long, unique production secret.")
+SECRET_KEY = read_secret("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
     if not DEBUG:
         raise ImproperlyConfigured("DJANGO_SECRET_KEY must be configured outside development.")
@@ -32,7 +60,20 @@ if not DEBUG and not ALLOWED_HOSTS:
 if not DEBUG and any(host == "*" or host.startswith((".", "*.")) for host in ALLOWED_HOSTS):
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must not contain a wildcard in production.")
 
-database_url = env.str("DATABASE_URL", default="")
+database_url = read_secret("DATABASE_URL")
+database_password_file = env.str("DATABASE_PASSWORD_FILE", default="").strip()
+if not database_url and database_password_file:
+    database_password = read_secret_file(database_password_file, "DATABASE_PASSWORD_FILE")
+    database_name = env.str("POSTGRES_DB", default="").strip()
+    database_user = env.str("POSTGRES_USER", default="").strip()
+    database_host = env.str("DATABASE_HOST", default="db").strip()
+    database_port = env.str("DATABASE_PORT", default="5432").strip()
+    if not database_name or not database_user or not database_host or not database_port:
+        raise ImproperlyConfigured("PostgreSQL database name, user, host, and port must be configured.")
+    database_url = (
+        f"postgresql://{quote(database_user, safe='')}:{quote(database_password, safe='')}"
+        f"@{database_host}:{database_port}/{quote(database_name, safe='')}"
+    )
 if not DEBUG and not database_url:
     raise ImproperlyConfigured("DATABASE_URL must point to the production database.")
 if not DEBUG and not database_url.lower().startswith(("postgres://", "postgresql://")):
@@ -57,6 +98,14 @@ if cache_url:
         }
     }
 
+CELERY_BROKER_URL = env.str(
+    "CELERY_BROKER_URL",
+    default=cache_url or "redis://127.0.0.1:6379/1",
+)
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_IGNORE_RESULT = True
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -79,6 +128,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -114,8 +164,9 @@ AUTH_PASSWORD_VALIDATORS = [
 AUTH_USER_MODEL = "users.User"
 
 REST_FRAMEWORK = {
+    "NUM_PROXIES": NUM_PROXIES,
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.users.authentication.VersionedJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -130,6 +181,9 @@ REST_FRAMEWORK = {
         "login": "10/hour",
         "register": "5/hour",
         "password_change": "5/hour",
+        "email_verification": "5/hour",
+        "password_reset": "5/hour",
+        "oauth_exchange": "30/minute",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -149,6 +203,7 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+PASSWORD_RESET_TIMEOUT = 60 * 60
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(env.str("DJANGO_MEDIA_ROOT", default=str(BASE_DIR / "media")))
 GIT_REPOSITORY_ROOT = Path(
@@ -157,7 +212,7 @@ GIT_REPOSITORY_ROOT = Path(
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.ManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
@@ -176,6 +231,7 @@ SECURE_PROXY_SSL_HEADER = (
     if env.bool("DJANGO_TRUST_PROXY_SSL_HEADER", default=False)
     else None
 )
+USE_X_FORWARDED_HOST = env.bool("DJANGO_USE_X_FORWARDED_HOST", default=False)
 SECURE_HSTS_SECONDS = env.int(
     "DJANGO_SECURE_HSTS_SECONDS",
     default=0 if DEBUG else 31_536_000,
@@ -204,7 +260,7 @@ EMAIL_BACKEND = env.str(
 EMAIL_HOST = env.str("DJANGO_EMAIL_HOST", default="")
 EMAIL_PORT = env.int("DJANGO_EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env.str("DJANGO_EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = env.str("DJANGO_EMAIL_HOST_PASSWORD", default="")
+EMAIL_HOST_PASSWORD = read_secret("DJANGO_EMAIL_HOST_PASSWORD")
 EMAIL_USE_TLS = env.bool("DJANGO_EMAIL_USE_TLS", default=True)
 DEFAULT_FROM_EMAIL = env.str("DJANGO_DEFAULT_FROM_EMAIL", default="noreply@localhost")
 

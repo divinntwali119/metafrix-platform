@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
 import { SearchModal } from "@/components/layout/SearchModal";
+import { ServiceWorkerRegistration } from "@/components/layout/ServiceWorkerRegistration";
 import { StoreHydration } from "@/components/layout/StoreHydration";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 
@@ -20,9 +21,19 @@ export const metadata: Metadata = {
   title: "MetafriX — Plateforme Git & Réseau Social pour Développeurs",
   description:
     "MetafriX combine la gestion de dépôts Git et un réseau social dédié aux développeurs et professionnels tech.",
+  applicationName: "MetafriX",
+  appleWebApp: {
+    capable: true,
+    title: "MetafriX",
+    statusBarStyle: "black-translucent",
+  },
   icons: {
     icon: "/metafrix-fox.svg",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#111315",
 };
 
 export default function RootLayout({
@@ -36,6 +47,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-(--primary-text)">
+        <ServiceWorkerRegistration />
         <StoreHydration />
         <Navbar />
         <main className="flex-1 pb-20 md:pb-0">

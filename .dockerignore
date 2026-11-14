@@ -1,0 +1,47 @@
+# Git and local tooling
+.git
+.github
+.vscode
+.idea
+.secrets
+backups
+*.sql
+*.dump
+
+# Node / Next build artifacts
+node_modules
+.next
+out
+coverage
+*.tsbuildinfo
+npm-debug.log*
+
+# Python caches and virtual environments
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Secrets and local environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Runtime databases, logs, uploads and Git data
+backend/db.sqlite3
+backend/staticfiles
+backend/media
+backend/var
+data
+media
+staticfiles
+var
+*.log
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db

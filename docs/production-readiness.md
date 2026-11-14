@@ -1,6 +1,6 @@
 # AfriHub / MetafriX — bilan et préparation à la production
 
-**Mise à jour : 13 novembre 2026**
+**Mise à jour : 14 novembre 2026**
 **État : prêt pour une validation en staging, pas encore certifié pour une ouverture publique complète.**
 
 Ce document distingue les fonctionnalités présentes dans le code, celles qui restent à développer et les contrôles d’exploitation à réaliser. Les vérifications locales ne remplacent ni un déploiement de staging, ni un audit, ni la validation de l’infrastructure réelle.
@@ -16,6 +16,8 @@ La plateforme n’est toutefois pas « complète à 100 % » : les opérations G
 ### Authentification et protection des requêtes
 
 - Authentification avec inscription, connexion par nom d’utilisateur ou e-mail, déconnexion, renouvellement JWT et changement de mot de passe.
+- Inscription en attente jusqu’à confirmation e-mail, vérification à jeton unique, renvoi à réponse générique et récupération/réinitialisation par lien expirant; les changements de mot de passe révoquent les sessions existantes, refresh et access tokens.
+- Flux OAuth Authorization Code + PKCE pour Google et Microsoft, validation serveur des ID tokens et politique de non-fusion silencieuse des comptes; nécessite des identifiants fournisseur et callbacks réels.
 - Les jetons restent côté serveur dans des cookies `HttpOnly`; le client navigateur ne les lit pas.
 - Le proxy Next.js transmet l’identité au backend et vérifie l’origine des mutations.
 - Les endpoints sont authentifiés par défaut, avec des routes publiques explicites et des limites de requêtes pour les opérations sensibles.
@@ -46,15 +48,16 @@ Références : [configuration Django](../backend/config/settings.py), [lecteur G
 - La recherche globale couvre les dépôts, les développeurs et les publications; elle ne couvre pas encore les issues, PR, organisations ou messages.
 - Les médias de publication sont référencés par URL distante uniquement; l’upload/stockage objet, les flux temps réel et les données de contributions Git ne sont pas implémentés.
 - `NEXT_PUBLIC_DEMO_MODE` doit rester désactivé sur tout environnement réel.
+- Les images Docker Next/Django, Compose (PostgreSQL, Redis), healthchecks et montages secrets sont fournis pour le démarrage et le staging. Cela ne remplace ni reverse proxy TLS, sauvegardes, stockage média externe, supervision, ni tests du fournisseur OAuth/SMTP sur un domaine réel.
 
 Références : [écran de fonctionnalité indisponible](../src/components/ui/FeatureUnavailable.tsx), [service de dépôt](../src/services/repository.service.ts), [état des fonctionnalités](backend-handoff.md).
 
 ### Qualité et intégration continue
 
-- Le workflow [CI GitHub Actions](../.github/workflows/ci.yml) définit les contrôles frontend et backend, avec services PostgreSQL et Redis pour le job backend.
+- Le workflow [CI GitHub Actions](../.github/workflows/ci.yml) définit les contrôles frontend et backend, avec services PostgreSQL et Redis pour le job backend, ainsi qu’une validation Compose et la construction des deux images conteneur.
 - Le README décrit les démarrages locaux et les prérequis production : [README](../README.md).
 
-Dernière validation locale :
+ Validation de référence antérieure aux derniers changements d’authentification et Docker :
 
 - `npm run lint` : réussi.
 - `npm run build` : réussi.
@@ -69,7 +72,7 @@ Le contrôle `check --deploy` avec des valeurs synthétiques ne vérifie pas la 
 
 ### Priorité 1 — comptes et données personnelles
 
-- Ajouter la vérification d’adresse e-mail et la récupération/réinitialisation de mot de passe par e-mail.
+- Configurer et tester l’envoi SMTP réel, ainsi que les callbacks Google/Microsoft sur un domaine HTTPS vérifié; les contrôles de code seuls ne garantissent pas la délivrabilité ou l’acceptation par les fournisseurs.
 - Mettre en place les préférences persistantes de notification et de confidentialité.
 - Implémenter réellement la 2FA avant d’offrir une option d’activation.
 - Ajouter le stockage sécurisé des avatars et les liens sociaux persistants.
@@ -109,16 +112,20 @@ Restent à terminer : upload et stockage sûr des images/avatars, médias héber
 - [ ] Créer Redis partagé et sécurisé (TLS ou réseau privé de confiance).
 - [ ] Générer les secrets en production et les conserver dans un gestionnaire de secrets; ne jamais réutiliser les valeurs de CI ou d’exemple.
 - [ ] Configurer les hôtes autorisés, DNS, certificats TLS, terminaison HTTPS et en-têtes du reverse proxy.
+- [ ] Configurer `DJANGO_NUM_PROXIES` et vérifier que le reverse proxy écrase `X-Forwarded-For`; ne jamais faire confiance aux valeurs envoyées directement par le navigateur.
 - [ ] Configurer `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DATABASE_URL`, `DJANGO_CACHE_URL`, `BACKEND_API_URL` et `NEXT_PUBLIC_DEMO_MODE=false`.
 - [ ] Garder `DJANGO_SECURE_SSL_REDIRECT=True` et un HSTS positif. N’activer `includeSubDomains` ou `preload` qu’après validation de tous les sous-domaines concernés.
 - [ ] Configurer `DJANGO_TRUST_PROXY_SSL_HEADER=True` uniquement si le proxy de confiance retire puis réécrit l’en-tête correspondant.
 - [ ] Configurer le SMTP, son expéditeur, les secrets et la délivrabilité; tester réception et gestion des rebonds.
+- [ ] Configurer `APP_BASE_URL`, `AUTH_EXCHANGE_SECRET`, les secrets montés de Django/PostgreSQL/SMTP et, si activés, les identifiants client OAuth.
+- [ ] Enregistrer et tester les callbacks OAuth Google/Microsoft sur le domaine HTTPS de staging; garder les fournisseurs désactivés tant que leurs secrets ne sont pas provisionnés.
+- [ ] Vérifier `docker compose config`, les builds finaux, les healthchecks et l’exécution des migrations avec les versions et secrets de staging.
 - [ ] Mettre les médias et dépôts Git sur un stockage persistant, privé, surveillé et sauvegardé. Évaluer le stockage objet pour les médias.
 - [ ] Déployer les assets statiques avec `python manage.py collectstatic --noinput`.
 - [ ] Tester migrations, démarrage, healthcheck, redémarrage, montée en charge horizontale et restauration à partir d’une sauvegarde.
 - [ ] Vérifier qu’aucun fichier `.env`, secret, jeton ou donnée personnelle n’est livré dans le dépôt ou les artefacts.
 
-Le healthcheck existant teste la base de données seulement; il ne constitue pas un contrôle de disponibilité de Redis, SMTP, Git ou du stockage média.
+Le healthcheck HTTP Django teste la base de données seulement; le Compose ajoute des contrôles de conteneur séparés pour Redis et Next.js. Aucun d’eux ne valide SMTP, Git, la sauvegarde, la délivrabilité des e-mails ou la disponibilité des domaines OAuth.
 
 ## Observabilité et réponse aux incidents
 
