@@ -35,7 +35,7 @@ class Migration(migrations.Migration):
         migrations.AddField(model_name="organisation", name="description", field=models.TextField(blank=True, default="")),
         migrations.AddField(model_name="organisation", name="location", field=models.CharField(blank=True, default="", max_length=160)),
         migrations.AddField(model_name="organisation", name="website", field=models.URLField(blank=True, default="", max_length=2048)),
-        migrations.AddField(model_name="organisation", name="slug", field=models.SlugField(blank=True, max_length=100, null=True)),
+        migrations.AddField(model_name="organisation", name="slug", field=models.SlugField(blank=True, db_index=False, max_length=100, null=True)),
         migrations.CreateModel(
             name="OrganisationMembership",
             fields=[
