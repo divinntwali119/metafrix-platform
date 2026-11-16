@@ -9,8 +9,9 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+from apps.auth.models import EmailVerificationToken, ExternalIdentity
 from apps.notifications.models import Notification
-from .models import EmailVerificationToken, ExternalIdentity, Follow, User
+from .models import Follow, User
 
 
 class AuthenticationApiTests(APITestCase):
