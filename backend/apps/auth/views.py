@@ -21,7 +21,7 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 
 from apps.auth.emails import send_password_reset_email, send_verification_email
 from apps.auth.models import EmailVerificationToken, ExternalIdentity
-from backend.apps.auth.serializers import (
+from apps.auth.serializers import (
     EmailAddressSerializer,
     EmailVerificationSerializer,
     LoginSerializer,
