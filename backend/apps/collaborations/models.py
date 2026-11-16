@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
 
+
 # Organisation model
 class Organisation(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -19,18 +20,21 @@ class Organisation(models.Model):
     def __str__(self) -> str:
         return f"{self.name} | {self.created_by}"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
         if not self.slug:
             base_slug = slugify(self.name)[:90] or "organisation"
             candidate = base_slug
+            
             suffix = 2
             while Organisation.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
                 candidate = f"{base_slug[:90]}-{suffix}"
                 suffix += 1
+                
             self.slug = candidate
         super().save(*args, **kwargs)
 
 
+# Organisation user link
 class OrganisationMembership(models.Model):
     class Role(models.TextChoices):
         OWNER = "owner", "Propriétaire"
@@ -49,32 +53,48 @@ class OrganisationMembership(models.Model):
         ]
 
 
+# Repository that belongs to an organisation
 class OrganisationRepository(models.Model):
-    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name="repository_links")
-    repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE, related_name="organisation_links")
-    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organisation_repository_links")
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='repository_links')
+    repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE, related_name='organisation_links')
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='organisation_repository_links')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
         constraints = [
-            models.UniqueConstraint(fields=["organisation", "repository"], name="unique_repository_per_organisation"),
+            models.UniqueConstraint(fields=['organisation', 'repository'], name='unique_repository_per_organisation'),
         ]
 
+        
 # Team model
 class Team(models.Model):
+    slug = models.SlugField(primary_key=True, unique=True, blank=True)
     name = models.CharField(max_length=100)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='teams', null=True, blank=True)
-    images_profile = models.ImageField(upload_to='teams/images/', null=True, blank=True)
+    organisation = models.ForeignKey('organisation.Organisation', on_delete=models.CASCADE, related_name='teams', null=True, blank=True)
+    image_profile = models.ImageField(upload_to='teams/images/', null=True, blank=True)
     
     class Meta:
         verbose_name = "Equipe"
         
+    def save(self, *args, **kwargs) -> None:
+        if not self.slug:
+            base_slug = self.organisation.slug + '_' + slugify(self.name)[:90] or 'team'
+            candidate = base_slug
+            suffix = 2
+            
+            while Organisation.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
+                candidate = f"{base_slug[:90]}-{suffix}"
+                suffix += 1
+                
+            self.slug = candidate
+        super().save(*args, **kwargs)
+        
     def __str__(self) -> str:
         return self.name
-    
+
 
 # Team member model
 class Member(models.Model):
@@ -91,25 +111,11 @@ class Member(models.Model):
         return f"{self.user.username} | {self.tag if len(self.tag.strip()) == 0 else self.role}"
     
     
-# Invitation model
-class Invitation(models.Model):
-    repo = models.ForeignKey('repositories.Repository', on_delete=models.CASCADE)
-    to_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='invitations')
-    accepted = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        ordering = ['-created_at',]
-    
-    def __str__(self) -> str:
-        return f"Invitation adresse a {self.to_user}"
-    
-    
 ############################################### TEAM SPACE MODELS ###############################################
 
 # Board
 class Board(models.Model):
-    repo = models.OneToOneField('repositories.Repository', on_delete=models.SET_NULL, related_name='board', null=True, blank=True)
+    repo = models.OneToOneField('repositories.Repository', on_delete=models.CASCADE, related_name='board')
     name = models.CharField(max_length=100)
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='spaces')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -127,6 +133,7 @@ class Board(models.Model):
     def __str__(self) -> str:
         return f"{self.name} | {self.team.name}"
 
+
 # Attachment model
 class Attachment(models.Model):
     file = models.FileField(upload_to='boards/files/')
@@ -141,21 +148,7 @@ class Attachment(models.Model):
         
     def __str__(self) -> str:
         return f"{self.file.name} | {self.board.name}"
-
-# Comment model
-class Comment(models.Model):
-    content = models.TextField()
-    board = models.ForeignKey(Board, on_delete=models.PROTECT, related_name='comments')
-    author = models.ForeignKey(Member, on_delete=models.PROTECT, related_name='comments')
-    created_at = models.DateTimeField(auto_now_add=True)
     
-    class Meta:
-        verbose_name = "Commentaire"
-        verbose_name_plural = "Commentaires"
-        ordering = ['-created_at',]
-        
-    def __str__(self) -> str:
-        return f"{self.author} | {self.board.name} | {self.created_at:%Y-%m-%d %H:%M}"
     
 # Note model
 class Note(models.Model):
@@ -187,6 +180,7 @@ class Note(models.Model):
     def __str__(self) -> str:
         return f"{self.title} | {self.board.name}"
 
+
 # ToDoList model
 class ToDoList(models.Model):
     title = models.CharField(max_length=100)
@@ -211,6 +205,7 @@ class ToDoList(models.Model):
         
     def __str__(self) -> str:
         return f" Liste de tâches: {self.title}"
+
 
 # Task model
 class Task(models.Model):
