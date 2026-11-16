@@ -120,6 +120,7 @@ INSTALLED_APPS = [
     "apps.notifications.apps.NotificationsConfig",
     "apps.posts.apps.PostsConfig",
     "apps.repositories.apps.RepositoriesConfig",
+    "apps.auth.apps.AuthConfig",
     "apps.users.apps.UsersConfig",
     "apps.git_server.apps.GitServerConfig",
 ]
@@ -164,7 +165,7 @@ AUTH_USER_MODEL = "users.User"
 REST_FRAMEWORK = {
     "NUM_PROXIES": NUM_PROXIES,
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.users.authentication.VersionedJWTAuthentication",
+        "apps.auth.authentication.VersionedJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
