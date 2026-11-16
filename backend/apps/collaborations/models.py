@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
@@ -5,6 +7,7 @@ from django.utils.text import slugify
 
 # Organisation model
 class Organisation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True, blank=True)
     description = models.TextField(blank=True, default="")
@@ -36,6 +39,8 @@ class Organisation(models.Model):
 
 # Organisation user link
 class OrganisationMembership(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     class Role(models.TextChoices):
         OWNER = "owner", "Propriétaire"
         ADMIN = "admin", "Administrateur"
@@ -55,6 +60,8 @@ class OrganisationMembership(models.Model):
 
 # Repository that belongs to an organisation
 class OrganisationRepository(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='repository_links')
     repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE, related_name='organisation_links')
     added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='organisation_repository_links')
@@ -73,7 +80,7 @@ class Team(models.Model):
     name = models.CharField(max_length=100)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    organisation = models.ForeignKey('organisation.Organisation', on_delete=models.CASCADE, related_name='teams', null=True, blank=True)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='teams', null=True, blank=True)
     image_profile = models.ImageField(upload_to='teams/images/', null=True, blank=True)
     
     class Meta:
@@ -98,6 +105,8 @@ class Team(models.Model):
 
 # Team member model
 class Member(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='team_links')
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='members')
     role = models.CharField(max_length=40)
@@ -115,6 +124,8 @@ class Member(models.Model):
 
 # Board
 class Board(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     repo = models.OneToOneField('repositories.Repository', on_delete=models.CASCADE, related_name='board')
     name = models.CharField(max_length=100)
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='spaces')
@@ -136,6 +147,8 @@ class Board(models.Model):
 
 # Attachment model
 class Attachment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     file = models.FileField(upload_to='boards/files/')
     board = models.ForeignKey(Board, on_delete=models.PROTECT, related_name='files')
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -152,6 +165,8 @@ class Attachment(models.Model):
     
 # Note model
 class Note(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     class CardColor(models.TextChoices):
         RED = 'red', "Rouge"
         GREEN = 'green', "Vert"
@@ -183,6 +198,8 @@ class Note(models.Model):
 
 # ToDoList model
 class ToDoList(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     title = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     assigned_to = models.ForeignKey(Member, on_delete=models.PROTECT, related_name='todo_lists', null=True, blank=True)
@@ -209,6 +226,8 @@ class ToDoList(models.Model):
 
 # Task model
 class Task(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     title = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     todo_list = models.ForeignKey(ToDoList, on_delete=models.PROTECT, related_name='subtasks')
