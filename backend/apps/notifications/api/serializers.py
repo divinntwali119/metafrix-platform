@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.users.serializers import UserSerializer
-from .models import Notification
+from ..models import Notification
 
 
 class NotificationSerializer(serializers.ModelSerializer):

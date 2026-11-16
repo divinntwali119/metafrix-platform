@@ -1,12 +1,12 @@
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
+from django.http import HttpRequest
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Notification
+from ..models import Notification
 from .serializers import NotificationSerializer
 
 
@@ -19,7 +19,7 @@ class NotificationPagination(PageNumberPagination):
 class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request: HttpRequest) -> Response:
         queryset = Notification.objects.filter(recipient=request.user).select_related(
             "actor", "actor__profile"
         )
@@ -36,7 +36,7 @@ class NotificationListView(APIView):
 class NotificationReadAllView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def post(self, request: HttpRequest) -> Response:
         updated = Notification.objects.filter(recipient=request.user, is_read=False).update(
             is_read=True
         )
@@ -46,7 +46,7 @@ class NotificationReadAllView(APIView):
 class NotificationDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def patch(self, request, notification_id: int):
+    def patch(self, request: HttpRequest, notification_id: int) -> Response:
         notification = get_object_or_404(
             Notification, pk=notification_id, recipient=request.user
         )
@@ -54,7 +54,7 @@ class NotificationDetailView(APIView):
         notification.save(update_fields=["is_read"])
         return Response(NotificationSerializer(notification, context={"request": request}).data)
 
-    def delete(self, request, notification_id: int):
+    def delete(self, request: HttpRequest, notification_id: int) -> Response:
         notification = get_object_or_404(
             Notification, pk=notification_id, recipient=request.user
         )
