@@ -24,31 +24,32 @@ class Event(models.Model):
         ]
         
     def __str__(self) -> str:
-        return f"{self.name} par {self.organisator}"
+        return f'{self.name} par {self.organisator}'
 
 # Post model
 class Post(models.Model):
     class Type(models.TextChoices):
-        TEXT = "text", "Discussion"
-        CODE = "code", "Code"
-        PROJECT = "project", "Projet"
-        TUTORIAL = "tutorial", "Tutoriel"
-        QUESTION = "question", "Question"
-        ANNOUNCEMENT = "announcement", "Annonce"
+        TEXT = 'text', "Discussion"
+        CODE = 'code', "Code"
+        PROJECT = 'project', "Projet"
+        TUTORIAL = 'tutorial', "Tutoriel"
+        QUESTION = 'question', "Question"
+        ANNOUNCEMENT = 'announcement', "Annonce"
 
-    title = models.CharField(max_length=100, blank=True, default="")
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    title = models.CharField(max_length=100, blank=True, default='')
     description = models.TextField()
     posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='posts')
     posted_at = models.DateTimeField(auto_now_add=True)
     type = models.CharField(max_length=20, choices=Type.choices, default=Type.TEXT)
-    code_language = models.CharField(max_length=40, blank=True, default="")
-    code_content = models.TextField(blank=True, default="")
-    code_filename = models.CharField(max_length=160, blank=True, default="")
-    media_url = models.URLField(max_length=2048, blank=True, default="")
+    code_language = models.CharField(max_length=40, blank=True, default='')
+    code_content = models.TextField(blank=True, default='')
+    code_filename = models.CharField(max_length=160, blank=True, default='')
+    media_url = models.URLField(max_length=2048, blank=True, default='')
     repository = models.ForeignKey(
-        "repositories.Repository",
+        'repositories.Repository',
         on_delete=models.SET_NULL,
-        related_name="social_posts",
+        related_name='social_posts',
         null=True,
         blank=True,
     )
@@ -57,7 +58,7 @@ class Post(models.Model):
         ordering = ['-posted_at', '-pk']
         
     def __str__(self) -> str:
-        return f"{self.posted_by} : {self.title}"
+        return f'{self.posted_by} : {self.title}'
     
 # Reel model
 class Reel(models.Model):
@@ -77,52 +78,71 @@ class Reel(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
 
     def __str__(self) -> str:
-        return f"Reel {self.id} - {self.status}"
+        return f'Reel {self.id} - {self.status}'
 
-# Like model
-class Like(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='likes', null=True, blank=True)
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='likes', null=True, blank=True)
-    reel = models.ForeignKey(Reel, on_delete=models.CASCADE, related_name='reels', null=True, blank=True)
-    liked_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.DO_NOTHING, related_name='likes')
-    liked_at = models.DateTimeField(auto_now_add=True)
+# Reel reaction model
+class ReelReaction(models.Model):
+    class Type(models.TextChoices):
+        LIKE = 'like', "J'aime"
+        WATCHED = 'watched', "Vu"
+        SAVED = 'saved', "Enregitre"
+        SHARED = 'shared', "Partage"
+        RESHARED = 'reshared', "Repartage"
+        
+    reel = models.ForeignKey(Reel, on_delete=models.CASCADE, related_name='reaction')
+    type = models.CharField(max_length=20, choices=Type.choices)
+    by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.DO_NOTHING, related_name='likes')
+    at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        verbose_name = "J'aime"
-        verbose_name_plural = "J'aimes"
-        ordering = ['-liked_at', 'post', 'event']
+        verbose_name = "Reaction"
+        verbose_name_plural = "Reactions"
+        ordering = ['-at']
+        constraints = [
+            models.UniqueConstraint(fields=['reel', 'by', 'type'], name='type_react_per_user'),
+        ]
 
 
+# Reel comment model
+class ReelComment(models.Model):
+    reel = models.ForeignKey(Reel, on_delete=models.CASCADE, related_name='comment')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reel_comments')
+    content = models.CharField(max_length=2000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['created_at']
+
+
+# Post comment model
 class PostComment(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="comments")
-    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_comments")
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='post_comments')
     content = models.CharField(max_length=2000)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["created_at", "pk"]
+        ordering = ['created_at', 'pk']
 
 
-class PostLike(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="post_likes")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_likes")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        constraints = [
-            models.UniqueConstraint(fields=["post", "user"], name="unique_post_like_per_user"),
-        ]
-
-
-class PostBookmark(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="bookmarks")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="post_bookmarks")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        constraints = [
-            models.UniqueConstraint(fields=["post", "user"], name="unique_post_bookmark_per_user"),
-        ]
+# Post reaction model
+class PostReaction(models.Model):
+    class Type(models.TextChoices):
+        LIKE = 'like', "J'aime"
+        WATCHED = 'watched', "Vu"
+        BOOKMARK = 'bookmark', "Enregitre"
+        SHARED = 'shared', "Partager"
     
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reactions')
+    by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.DO_NOTHING, related_name='reactions')
+    type = models.CharField(max_length=20, choices=Type.choices)
+    at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Reaction"
+        verbose_name_plural = "Reactions"
+        ordering = ['-at']
+        constraints = [
+            models.UniqueConstraint(fields=['post', 'by', 'type'], name='unique_post_reaction_per_user'),
+        ]

@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 from apps.notifications.models import Notification
 from apps.repositories.models import Repository
 from apps.users.models import User
-from .models import Post, PostBookmark, PostComment, PostLike
+from .models import Post, PostComment, PostReaction
 
 
 class SocialFeedApiTests(APITestCase):
@@ -75,12 +75,25 @@ class SocialFeedApiTests(APITestCase):
 		base = f"/api/posts/{post.pk}/"
 		liked = self.client.put(f"{base}like/")
 		self.assertTrue(liked.data["isLiked"])
-		self.assertEqual(PostLike.objects.filter(post=post, user=self.bob).count(), 1)
+		self.assertEqual(
+			PostReaction.objects.filter(
+				post=post,
+				by=self.bob,
+				type=PostReaction.Type.LIKE,
+			).count(),
+			1,
+		)
 		commented = self.client.post(f"{base}comments/", {"content": "Bravo"}, format="json")
 		self.assertEqual(commented.status_code, 201)
 		self.assertEqual(PostComment.objects.filter(post=post).count(), 1)
 		self.client.put(f"{base}bookmark/")
-		self.assertTrue(PostBookmark.objects.filter(post=post, user=self.bob).exists())
+		self.assertTrue(
+			PostReaction.objects.filter(
+				post=post,
+				by=self.bob,
+				type=PostReaction.Type.BOOKMARK,
+			).exists()
+		)
 		self.assertEqual(Notification.objects.filter(recipient=self.alice).count(), 2)
 
 		self.client.force_authenticate(self.alice)
