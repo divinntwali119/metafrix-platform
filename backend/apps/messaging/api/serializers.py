@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from django.db.models import Q
 from rest_framework import serializers
 
-from apps.users.serializers import UserSerializer
+from apps.users.api.serializers import UserSerializer
 from ..models import Conversation, Message
 
 

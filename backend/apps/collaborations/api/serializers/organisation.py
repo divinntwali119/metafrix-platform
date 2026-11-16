@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from apps.repositories.models import Repository
 from apps.repositories.serializers import RepositorySerializer
-from apps.users.serializers import UserSerializer
+from apps.users.api.serializers import UserSerializer
 from ...models import (
     Organisation,
 )
