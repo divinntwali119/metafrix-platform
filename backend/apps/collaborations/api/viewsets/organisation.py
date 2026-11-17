@@ -17,7 +17,7 @@ from rest_framework.viewsets import GenericViewSet
 
 from apps.notifications.services import create_notification
 from apps.repositories.models import Repository
-from apps.repositories.serializers import RepositorySerializer
+from backend.apps.repositories.api.serializers import RepositorySerializer
 from apps.users.models import User
 
 from ..serializers.organisation import OrganisationCreateSerializer, OrganisationSerializer, OrganisationUpdateSerializer

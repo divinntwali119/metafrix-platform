@@ -5,7 +5,7 @@ from rest_framework import serializers
 from apps.users.models import User
 from apps.users.api.serializers import UserSerializer
 from apps.repositories.models import Repository
-from apps.repositories.serializers import RepositorySerializer
+from apps.repositories.api.serializers import RepositorySerializer
 from ...models import (
     Attachment,
     Board,

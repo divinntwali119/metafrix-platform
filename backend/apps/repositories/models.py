@@ -153,8 +153,7 @@ class PullRequest(models.Model):
     def relative_id(self) -> int:
         return self.repo.pull_requests.filter(
             Q(submitted_at__lt=self.submitted_at)
-            | Q(submitted_at=self.submitted_at, pk__lte=self.pk)
-        ).count()
+        ).count() + 1
         
     def __str__(self) -> str:
         return f"{self.title} par {self.submitted_by.username}" + (f" a résolu {self.issue.relative_id}" if getattr(self, 'issue', None) else "")

@@ -11,15 +11,15 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Issue, PullRequest, Repository, RepositorySettings, Star, Watcher
+from ..models import Issue, PullRequest, Repository, RepositorySettings, Star, Watcher
 from .serializers import (
 	IssueSerializer,
 	PullRequestSerializer,
 	RepositoryMetadataSerializer,
 	RepositorySerializer,
 )
-from .services import create_repo_from_data
-from .git_reader import (
+from ..services import create_repo_from_data
+from apps.git_server.git_reader import (
 	GitBinaryFile,
 	GitBlobTooLarge,
 	GitObjectNotFound,
@@ -31,7 +31,7 @@ from .git_reader import (
 	read_repository_blob,
 	read_repository_tree,
 )
-from apps.users.serializers import UserSerializer
+from apps.users.api.serializers import UserSerializer
 
 
 def get_visible_repository(request, repository_id: int) -> Repository:
