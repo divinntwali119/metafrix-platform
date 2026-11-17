@@ -29,14 +29,19 @@ Références : [proxy backend](../src/lib/server/backend-proxy.ts), [routes util
 ### Configuration Django et API
 
 - Configuration de production stricte : secret robuste requis, hôtes exacts, PostgreSQL, Redis, HTTPS, redirection SSL et HSTS.
-- Un healthcheck non authentifié vérifie la connexion à la base sans exposer de détails internes.
+- Le healthcheck backend configuré dans Compose appelle `/api/health/`, mais
+  cette route n’est pas enregistrée dans l’URLConf actuel; le contrôle échoue
+  jusqu’à l’ajout d’un endpoint correspondant.
 - Création et lecture de dépôts personnels; lecture des branches, arbres, blobs texte et commits du dépôt Git.
 - Validation des chemins Git et limites de taille/nombre pour contenir les lectures.
 - Étoiles et suivi de dépôt persistés par l’API, avec mutations idempotentes.
 - Modification de la description et de la visibilité réservée au propriétaire.
 - Les dépôts privés sont masqués aux utilisateurs non autorisés.
 
-Références : [configuration Django](../backend/config/settings.py), [lecteur Git](../backend/apps/repositories/git_reader.py), [API des dépôts](../backend/apps/repositories/views.py), [API santé](../backend/apps/api/views.py).
+Références : [configuration Django](../backend/config/settings.py),
+[lecteur Git](../backend/apps/git_server/git_reader.py),
+[API des dépôts](../backend/apps/repositories/api/views.py),
+[URLConf API](../backend/apps/api/urls.py).
 
 ### Interface et transparence produit
 
@@ -125,7 +130,10 @@ Restent à terminer : upload et stockage sûr des images/avatars, médias héber
 - [ ] Tester migrations, démarrage, healthcheck, redémarrage, montée en charge horizontale et restauration à partir d’une sauvegarde.
 - [ ] Vérifier qu’aucun fichier `.env`, secret, jeton ou donnée personnelle n’est livré dans le dépôt ou les artefacts.
 
-Le healthcheck HTTP Django teste la base de données seulement; le Compose ajoute des contrôles de conteneur séparés pour Redis et Next.js. Aucun d’eux ne valide SMTP, Git, la sauvegarde, la délivrabilité des e-mails ou la disponibilité des domaines OAuth.
+Compose contrôle séparément PostgreSQL, Redis et Next.js. Le healthcheck HTTP
+Django vise actuellement une route absente (`/api/health/`) et ne valide donc
+pas l’application; aucun de ces contrôles ne valide SMTP, Git, la sauvegarde,
+la délivrabilité des e-mails ou la disponibilité des domaines OAuth.
 
 ## Observabilité et réponse aux incidents
 

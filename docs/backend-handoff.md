@@ -328,8 +328,13 @@ d’un dépôt absent pour un non-propriétaire.
 | `GET /repositories/{repository_id}/commits/?branch=&limit=` | Public ou propriétaire | `limit` entier (défaut 100) | `{ results: Commit[] }`; limite invalide 400. |
 | `PUT`, `DELETE /repositories/{repository_id}/star/` | Authentifié; dépôt visible | — | Ajoute/retire l’étoile. `{ isStarred: boolean, starsCount: number }`. |
 | `PUT`, `DELETE /repositories/{repository_id}/watch/` | Authentifié; dépôt visible | — | Ajoute/retire le suivi. `{ isWatching: boolean, watchersCount: number }`. |
-| `GET`, `POST /repositories/{repository_id}/issues/` | Lecture publique si dépôt visible; création authentifiée | Création : `{ title: string, body: string, labels?: string[] }` | Page d’issues ou `201 Issue`. La création est refusée si les issues du dépôt sont désactivées. |
+| `GET`, `POST /repositories/{repository_id}/issues/` | Lecture publique si dépôt visible; création authentifiée | Création : `{ repositoryId: string, title: string, body: string, labels?: string[] }`; `repositoryId` est la clé primaire slug d’un dépôt existant | Page d’issues ou `201 Issue`. `repositoryId` est requis en entrée mais absent de la réponse. La création est refusée si les issues du dépôt sont désactivées. |
 | `GET`, `POST /repositories/{repository_id}/pulls/` | Lecture publique si dépôt visible; création authentifiée | Création : `{ title: string, body: string, sourceBranch: string, targetBranch: string }` | Page de PR ou `201 PullRequest`. La création est refusée si les PR sont désactivées. |
+
+Le sérialiseur `StarSerializer` expose en lecture seule `repo`, `starredBy`
+(objet `User`) et `starredAt`; il n’expose pas `starredById`. Il n’est pas
+utilisé par les routes actuelles : les routes d’étoile ci-dessus renvoient
+uniquement l’état et le compteur, et aucune route ne liste les étoiles.
 
 ```ts
 type Repository = {
@@ -357,7 +362,6 @@ type Repository = {
 
 type Issue = {
   id: string;
-  repositoryId: string;
   number: number;
   title: string;
   body: string;
@@ -439,7 +443,9 @@ actuelle :
 - Messagerie : `apps/messaging/api/urls.py` (conversations/messages).
 - Découverte utilisateurs : `apps/users/urls.py` (`/users/me/`, `/developers/`,
   détail et suivi développeur).
-- La racine `/health/` n’est pas incluse non plus dans l’agrégateur actuel.
+- Aucun endpoint `/api/health/` n’est enregistré dans l’agrégateur actuel;
+  pourtant, le healthcheck backend de `compose.yaml` interroge cette URL et
+  échoue tant qu’une route correspondante n’est pas ajoutée.
 
 Ne pas brancher ces fonctionnalités frontend sur les chemins ci-dessus avant
 leur inclusion et la validation de leurs vues/imports. Le fichier
