@@ -76,7 +76,7 @@ class OrganisationRepository(models.Model):
         
 # Team model
 class Team(models.Model):
-    slug = models.SlugField(primary_key=True, unique=True, blank=True)
+    slug = models.SlugField(max_length=100, unique=True, blank=True)
     name = models.CharField(max_length=100)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -88,12 +88,14 @@ class Team(models.Model):
         
     def save(self, *args, **kwargs) -> None:
         if not self.slug:
-            base_slug = self.organisation.slug + '_' + slugify(self.name)[:90] or 'team'
+            organisation_slug = self.organisation.slug if self.organisation_id else ''
+            base_slug = slugify(f'{organisation_slug}-{self.name}')[:100] or 'team'
             candidate = base_slug
             suffix = 2
             
-            while Organisation.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
-                candidate = f"{base_slug[:90]}-{suffix}"
+            while Team.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
+                suffix_text = f'-{suffix}'
+                candidate = f"{base_slug[:100 - len(suffix_text)]}{suffix_text}"
                 suffix += 1
                 
             self.slug = candidate
@@ -126,7 +128,13 @@ class Member(models.Model):
 class Board(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    repo = models.OneToOneField('repositories.Repository', on_delete=models.CASCADE, related_name='board')
+    repo = models.OneToOneField(
+        'repositories.Repository',
+        on_delete=models.SET_NULL,
+        related_name='board',
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=100)
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='spaces')
     created_at = models.DateTimeField(auto_now_add=True)

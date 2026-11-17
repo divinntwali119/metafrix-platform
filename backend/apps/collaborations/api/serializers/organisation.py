@@ -9,7 +9,6 @@ from apps.users.api.serializers import UserSerializer
 from ...models import (
     Organisation,
 )
-from .related import TeamSummarySerializer
 
 # Organisation serializer
 class OrganisationSerializer(serializers.ModelSerializer):
@@ -19,7 +18,6 @@ class OrganisationSerializer(serializers.ModelSerializer):
     repositoriesCount = serializers.SerializerMethodField()
     repositoryIds = serializers.SerializerMethodField()
     members = serializers.SerializerMethodField()
-    teams = serializers.SerializerMethodField()
     repositories = serializers.SerializerMethodField()
     isMember = serializers.SerializerMethodField()
     viewerRole = serializers.SerializerMethodField()
@@ -86,9 +84,6 @@ class OrganisationSerializer(serializers.ModelSerializer):
             for link in memberships
         ]
         
-    def get_teams(self, organisation : Organisation) -> list[dict[str, Any]]:            
-        return [] if not self.context.get('include_details', True) else TeamSummarySerializer(organisation.teams, many=True).data
-
     def get_repositories(self, organisation: Organisation) -> list[dict[str, Any]]:
         if not self.context.get('include_details', True):
             return []

@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 from apps.repositories.models import Repository
 from apps.users.models import User
 from .api.serializers.team import BoardSerializer
-from .models import Organisation, OrganisationMembership, OrganisationRepository
+from .models import Board, Organisation, OrganisationMembership, OrganisationRepository, Team
 
 
 class OrganisationApiTests(APITestCase):
@@ -29,6 +29,7 @@ class OrganisationApiTests(APITestCase):
 	def test_create_organisation_creates_owner_membership(self):
 		response = self.create_organisation()
 		self.assertEqual(response.status_code, 201, response.data)
+		self.assertNotIn("teams", response.data)
 		organisation = Organisation.objects.get(slug="afrihub-collective")
 		self.assertTrue(OrganisationMembership.objects.filter(
 			organisation=organisation, user=self.owner, role=OrganisationMembership.Role.OWNER
@@ -36,6 +37,7 @@ class OrganisationApiTests(APITestCase):
 		self.assertEqual(response.data["membersCount"], 1)
 		self.client.force_authenticate(None)
 		public_result = self.client.get("/api/organizations/").data["results"][0]
+		self.assertNotIn("teams", public_result)
 		self.assertEqual(public_result["members"], [])
 		self.assertFalse(public_result["isMember"])
 		self.assertIsNone(public_result["viewerRole"])
@@ -79,3 +81,14 @@ class OrganisationApiTests(APITestCase):
 		selected_repository = serializer.fields["repoSlug"].run_validation(str(repository.pk))
 
 		self.assertEqual(selected_repository, repository)
+
+	def test_team_slug_is_unique_and_board_exposes_it_as_team_id(self):
+		organisation = Organisation.objects.create(name="Team Workspace", created_by=self.owner)
+		team = Team.objects.create(name="Design Team", organisation=organisation, created_by=self.owner)
+		duplicate = Team.objects.create(name="Design Team", organisation=organisation, created_by=self.owner)
+		board = Board.objects.create(name="Planning", team=team)
+
+		self.assertIsInstance(team.pk, int)
+		self.assertNotEqual(team.slug, duplicate.slug)
+		self.assertEqual(BoardSerializer(board).data["teamId"], team.slug)
+		self.assertIsNone(BoardSerializer(board).data["repo"])
