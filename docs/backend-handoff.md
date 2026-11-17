@@ -39,7 +39,7 @@ gérer les jetons.
 
 | Méthode et route | Accès | Entrée | Réponse / comportement |
 | --- | --- | --- | --- |
-| `POST /auth/register/` | Public | `{ name: string, username: string, email: string, password: string }` | `201`: `{ verification_required: true, email_sent: boolean, detail: string }`. Le mot de passe doit faire 10 à 128 caractères; le compte reste inactif jusqu’à confirmation. |
+| `POST /auth/register/` | Public | `{ name: string, username: string, email: string, password: string }` | `201`: `{ verification_required: true, email_sent: boolean, detail: string }`. Le mot de passe doit faire 10 à 128 caractères; le compte reste inactif jusqu’à confirmation. Crée aussi le profil, l’e-mail primaire et les paramètres du compte. |
 | `POST /auth/login/` | Public | `{ email: string, password: string }` | La valeur `email` accepte un e-mail **ou** un username. Succès : `{ access: string, refresh: string, user: User }`. Un e-mail non confirmé répond 403. |
 | `POST /auth/email/verify/` | Public | `{ token: string }` | Confirme et active le compte; réponse `{ detail: string }`. Le lien est à usage unique et expire. |
 | `POST /auth/email/resend-verification/` | Public | `{ email: string }` | Réponse générique `{ detail: string }`, même si aucun compte en attente ne correspond. |
@@ -54,11 +54,24 @@ gérer les jetons.
 [Compte et profil](#compte-et-profil). Les champs e-mail sensibles ne doivent
 pas être réutilisés comme données de profil public.
 
+L’inscription par mot de passe normalise l’e-mail et le username en retirant les
+espaces superflus (l’e-mail est aussi mis en minuscules) et vérifie leur
+unicité sans tenir compte de la casse. La création du compte et de ses données
+associées est atomique : un échec ne laisse pas de compte partiellement créé.
+Le profil démarre vide; son e-mail primaire reprend l’adresse d’inscription.
+Les paramètres initiaux utilisent `Alt+K` comme raccourci, `metafrix` pour
+chaque canal de notification, l’e-mail primaire comme `defaultNotifEmail` et
+l’adresse du compte pour `securityAlertsNotif`.
+
 ## Compte et profil
 
 Toutes les routes de ce groupe sont privées. Le queryset des routes utilisateur
 est filtré sur le compte connecté; l’URL ne permet donc pas de lire ou modifier
-le compte d’un autre utilisateur.
+le compte d’un autre utilisateur. `GET`, `PUT` et `PATCH /users/{username}/`
+concernent le username du compte connecté; cette API ne crée pas de compte.
+Après une inscription par mot de passe, le profil et les paramètres sont créés
+automatiquement et peuvent être consultés ou modifiés via `/profile/` et
+`/settings/`.
 
 | Méthode et route | Entrée | Réponse / règle |
 | --- | --- | --- |
@@ -434,10 +447,12 @@ leur inclusion et la validation de leurs vues/imports. Le fichier
 
 ## Provisionnement et vérifications à faire avant intégration
 
-- Les flows d’inscription et OAuth créent l’utilisateur, mais le code actuel ne
-  crée pas automatiquement son `Profile` ni ses `Settings`. `/profile/` et
-  `/settings/` supposent ces objets présents; ils peuvent répondre 404 tant que
-  leur provisionnement n’est pas ajouté. Prévoir ce cas côté UI.
+- L’inscription par mot de passe crée automatiquement `Profile`, `Settings` et
+  un `ContactEmail` primaire lié à l’adresse d’inscription. En revanche, la
+  création d’un nouvel utilisateur par échange OAuth ne provisionne pas encore
+  ces objets; `/profile/` et `/settings/` peuvent donc répondre 404 pour ces
+  comptes. Un utilisateur OAuth préexistant est retourné tel quel : l’échange
+  ne répare pas non plus les objets manquants.
 - `/ignored-repositories/` crée avec `request.user.setting`; si les settings
   manquent, cette création échoue au lieu de créer implicitement les settings.
 - `User.avatar` est actuellement le nom de fichier du profil, alors que
