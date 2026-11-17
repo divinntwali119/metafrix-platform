@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.auth.models import ExternalIdentity
 from apps.users.models import User
+from apps.users.services import register_user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -55,15 +56,7 @@ class RegistrationSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data: dict) -> User:
-        name_parts = validated_data.pop("name").split(maxsplit=1)
-        return User.objects.create_user(
-            **validated_data,
-            first_name=name_parts[0],
-            last_name=name_parts[1] if len(name_parts) > 1 else "",
-            expertise_domain=User.Domain.OTHER,
-            is_active=False,
-            is_email_verified=False,
-        )
+        return register_user(validated_data)
 
 
 class OAuthExchangeSerializer(serializers.Serializer):

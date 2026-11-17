@@ -31,6 +31,7 @@ from apps.auth.serializers import (
     RegistrationSerializer,
 )
 from apps.users.api.serializers import UserSerializer
+from apps.users.services import register_user
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class RegisterView(APIView):
 		serializer.is_valid(raise_exception=True)
 		try:
 			with transaction.atomic():
-				user = serializer.save()
+				user = register_user(serializer.validated_data)
 		except IntegrityError:
 			return Response(
 				{"detail": "Cette adresse e-mail ou ce nom d’utilisateur est déjà utilisé."},

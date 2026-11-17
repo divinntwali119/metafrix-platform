@@ -1,7 +1,6 @@
 from django.db import models
 from django.db.models.functions import Lower
 from django.contrib.auth.models import AbstractUser
-from django.utils.text import slugify
 
 # The user model
 class User(AbstractUser):
@@ -44,7 +43,6 @@ class User(AbstractUser):
         TRANSLATOR = 'translator', "Traducteur ou traductrice"
         OTHER = 'other', "Autre"
         
-    username = models.SlugField(primary_key=True, unique=True)
     email = models.EmailField(unique=True)
     is_email_verified = models.BooleanField(default=False)
     auth_version = models.PositiveIntegerField(default=0)
@@ -57,19 +55,6 @@ class User(AbstractUser):
             models.UniqueConstraint(Lower("email"), name="users_user_email_ci_unique"),
             models.UniqueConstraint(Lower("username"), name="users_user_username_ci_unique"),
         ]
-        
-    def save(self, *args, **kwargs) -> None:
-        if not self.slug:
-            base_slug = slugify(self.get_full_name())[:90]
-            candidate = base_slug
-            suffix = 2
-    
-            while User.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
-                candidate = f"{base_slug[:90]}-{suffix}"
-                suffix += 1
-    
-            self.slug = candidate
-        super().save(*args, **kwargs)
         
     def __str__(self) -> str:
         return self.get_username()

@@ -11,7 +11,7 @@ from rest_framework.test import APITestCase
 
 from apps.auth.models import EmailVerificationToken, ExternalIdentity
 from apps.notifications.models import Notification
-from .models import Follow, User
+from .models import ContactEmail, Follow, Settings, User
 
 
 class AuthenticationApiTests(APITestCase):
@@ -77,6 +77,30 @@ class AuthenticationApiTests(APITestCase):
 
 		reused = self.client.post("/api/auth/email/verify/", {"token": token}, format="json")
 		self.assertEqual(reused.status_code, 400)
+
+	@override_settings(
+		EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+		APP_BASE_URL="https://metafrix.example.test",
+	)
+	def test_registration_creates_profile_settings_and_primary_email(self):
+		response = self.client.post(
+			"/api/auth/register/",
+			{
+				"name": "Amina Developer",
+				"username": "amina_dev",
+				"email": "amina@example.test",
+				"password": "Long-Unique-Password-928!",
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 201)
+		user = User.objects.get(username="amina_dev")
+		primary_email = user.profile.emails.get(type=ContactEmail.Type.PRIMARY)
+		self.assertEqual(primary_email.email, user.email)
+		self.assertEqual(user.setting.default_notif_email, primary_email)
+		self.assertEqual(user.setting.security_alerts_notif, user.email)
+		self.assertEqual(user.setting.watching_repos, Settings.NotifyMeOn.METAFRIX)
 
 	def test_duplicate_email_is_rejected(self):
 		User.objects.create_user(
