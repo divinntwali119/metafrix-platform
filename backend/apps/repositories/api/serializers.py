@@ -32,7 +32,7 @@ class RepositorySerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
     owner = UserSerializer(read_only=True)
     isPrivate = RepositoryAccessField(source='access', required=False, default=False)
-    defaultBranch = serializers.CharField(source='default_branch')
+    defaultBranch = serializers.CharField(source='default_branch', read_only=True)
     starsCount = serializers.SerializerMethodField()
     forksCount = serializers.SerializerMethodField()
     watchersCount = serializers.SerializerMethodField()
@@ -40,12 +40,12 @@ class RepositorySerializer(serializers.ModelSerializer):
     isWatching = serializers.SerializerMethodField()
     issuesCount = serializers.SerializerMethodField()
     pullsCount = serializers.SerializerMethodField()
-    languageColor = serializers.CharField(source='language_color')
+    languageColor = serializers.CharField(source='language_color', read_only=True)
     initializeReadme = serializers.BooleanField(write_only=True, required=False, default=True)
     size = serializers.SerializerMethodField()
     license = serializers.CharField(source='license_template', allow_null=True, required=False)
-    createdAt = serializers.DateTimeField(source='created_at')
-    updatedAt = serializers.DateTimeField(source='updated_at')
+    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
 
     class Meta:
         model = Repository
@@ -204,12 +204,13 @@ class IssueAttachmentSerializer(serializers.ModelSerializer):
 
 class IssueSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
-    repositoryId = serializers.PrimaryKeyRelatedField(source='repo_id', queryset=Repository.objects.all(), write_only=True)
+    repositoryId = serializers.PrimaryKeyRelatedField(source='repo_id', write_only=True)
     number = serializers.IntegerField(source='relative_id')
     body = serializers.CharField(source='description')
-    author = UserSerializer(source='submitted_by')
-    createdAt = serializers.DateTimeField(source='submitted_at')
-    updatedAt = serializers.DateTimeField(source='submitted_at')
+    author = UserSerializer(source='submitted_by', read_only=True)
+    commentsCount = serializers.SerializerMethodField()
+    createdAt = serializers.DateTimeField(source='submitted_at', read_only=True)
+    updatedAt = serializers.DateTimeField(source='submitted_at', read_only=True)
     attachments = serializers.SerializerMethodField()
 
     class Meta:
@@ -223,6 +224,7 @@ class IssueSerializer(serializers.ModelSerializer):
             'status',
             'labels',
             'author',
+            'attachments',
             'commentsCount',
             'createdAt',
             'updatedAt',
@@ -233,28 +235,33 @@ class IssueSerializer(serializers.ModelSerializer):
             'number',
             'status',
             'author',
+            'attachments',
+            'commentsCount',
             'createdAt',
             'updatedAt',
         ]
 
-    def get_attachment(self, issue: Issue) -> dict[str, Any]:
+    def get_attachments(self, issue: Issue) -> list[dict[str, Any]]:
         return IssueAttachmentSerializer(issue.attachments.all(), many=True).data
+
+    def get_commentsCount(self, issue: Issue) -> int:
+        return 0
 
 
 # Pull request serializer
 class PullRequestSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
-    repositoryId = serializers.CharField(source='repo_id')
-    number = serializers.IntegerField(source='relative_id')
+    repositoryId = serializers.CharField(source='repo_id', read_only=True)
+    number = serializers.IntegerField(source='relative_id', read_only=True)
     body = serializers.CharField(source='description')
-    author = UserSerializer(source='submitted_by')
+    author = UserSerializer(source='submitted_by', read_only=True)
     sourceBranch = serializers.CharField(source='source_branch')
     targetBranch = serializers.CharField(source='target_branch')
     additions = serializers.SerializerMethodField(read_only=True)
     deletions = serializers.SerializerMethodField(read_only=True)
     changedFilesCount = serializers.SerializerMethodField(read_only=True)
-    createdAt = serializers.DateTimeField(source='submitted_at')
-    updatedAt = serializers.DateTimeField(source='submitted_at')
+    createdAt = serializers.DateTimeField(source='submitted_at', read_only=True)
+    updatedAt = serializers.DateTimeField(source='submitted_at', read_only=True)
 
     class Meta:
         model = PullRequest
@@ -288,12 +295,18 @@ class PullRequestSerializer(serializers.ModelSerializer):
         ]
         
     def get_additions(self, pull_request: PullRequest) -> int:
-        pass
+        return 0
+
+    def get_deletions(self, pull_request: PullRequest) -> int:
+        return 0
+
+    def get_changedFilesCount(self, pull_request: PullRequest) -> int:
+        return 0
 
 
 # Star serializer
 class StarSerializer(serializers.ModelSerializer):
-    starredBy = UserSerializer(source='starred_by')
+    starredBy = serializers.PrimaryKeyRelatedField(source='starred_by')
     starredAt = serializers.DateTimeField(source='starred_at')
 
     class Meta:

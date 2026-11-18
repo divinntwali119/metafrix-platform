@@ -293,7 +293,10 @@ class RepositoryApiTests(APITestCase):
 
 		self.assertEqual(response.status_code, 201, response.data)
 		self.assertEqual(response.data["number"], 1)
+		self.assertEqual(response.data["repositoryId"], str(repository.pk))
 		self.assertEqual(response.data["author"]["username"], self.other_user.username)
+		self.assertEqual(response.data["commentsCount"], 0)
+		self.assertEqual(response.data["attachments"], [])
 		self.assertEqual(Issue.objects.filter(repo=repository).count(), 1)
 
 	def test_anonymous_user_cannot_create_an_issue(self):
@@ -309,6 +312,32 @@ class RepositoryApiTests(APITestCase):
 			format="json",
 		)
 		self.assertEqual(response.status_code, 401)
+
+	def test_pull_request_creation_returns_read_only_metadata_and_diff_counts(self):
+		repository = Repository.objects.create(
+			owner=self.owner,
+			name="pull-request-project",
+			access=Repository.Access.PUBLIC,
+		)
+		self.client.force_authenticate(self.other_user)
+
+		response = self.client.post(
+			f"/api/repositories/{repository.pk}/pulls/",
+			{
+				"title": "Add feature",
+				"body": "Please review this change.",
+				"sourceBranch": "feature",
+				"targetBranch": "main",
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 201, response.data)
+		self.assertEqual(response.data["repositoryId"], str(repository.pk))
+		self.assertEqual(response.data["number"], 1)
+		self.assertEqual(response.data["additions"], 0)
+		self.assertEqual(response.data["deletions"], 0)
+		self.assertEqual(response.data["changedFilesCount"], 0)
 
 
 @skipUnless(importlib.util.find_spec("pygit2"), "pygit2 is required for Git integration tests")
