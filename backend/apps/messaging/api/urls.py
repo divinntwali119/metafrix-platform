@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .viewsets import ConversationListCreateView, ConversationMessagesView, DirectConversationView
+from .views import ConversationListCreateView, ConversationMessagesView, DirectConversationView
 
 app_name = "messaging"
 urlpatterns = [
