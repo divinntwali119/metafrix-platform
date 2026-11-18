@@ -43,6 +43,21 @@ class SocialFeedApiTests(APITestCase):
 		self.assertEqual(response.data["count"], 1)
 		self.assertEqual(response.data["results"][0]["id"], str(post.pk))
 
+	def test_feed_can_filter_posts_by_an_email_username(self):
+		author = User.objects.create_user(
+			username="author@example.test",
+			email="author@example.test",
+			password="test-password",
+		)
+		post = Post.objects.create(posted_by=author, description="A profile post")
+
+		response = self.client.get("/api/posts/", {"author": author.username})
+
+		self.assertEqual(response.status_code, 200, response.data)
+		self.assertEqual(response.data["count"], 1)
+		self.assertEqual(response.data["results"][0]["id"], str(post.pk))
+		self.assertEqual(response.data["results"][0]["author"]["username"], author.username)
+
 	def test_global_search_matches_post_text_and_code_without_exposing_private_posts(self):
 		public_post = Post.objects.create(
 			posted_by=self.alice,

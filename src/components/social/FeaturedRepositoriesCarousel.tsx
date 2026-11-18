@@ -11,6 +11,7 @@ import {
   Star,
 } from "lucide-react";
 import type { Repository } from "@/types";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface FeaturedRepositoriesCarouselProps {
   repositories: Repository[];
@@ -156,8 +157,7 @@ export function FeaturedRepositoriesCarousel({
 
             <div className="flex flex-1 flex-col p-4">
               <div className="flex min-w-0 items-center gap-2.5">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <AvatarImage
                   src={repository.owner.avatar}
                   alt=""
                   loading="lazy"

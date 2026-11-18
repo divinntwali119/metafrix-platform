@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { socialService } from "@/services/social.service";
 import { getApiErrorMessage } from "@/lib/api-error";
 import type { Organization } from "@/types";
@@ -244,8 +245,7 @@ export default function OrganizationsPage() {
               >
                 <div className="flex items-center gap-3">
                   <span className="h-12 w-12 shrink-0 overflow-hidden rounded-full border border-(--border) bg-(--muted)">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AvatarImage
                       src={organization.avatar}
                       alt={organization.name}
                       loading="lazy"

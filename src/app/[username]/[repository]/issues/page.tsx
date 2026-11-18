@@ -6,6 +6,7 @@ import { RepoHeader } from "@/components/repository/RepoHeader";
 import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
 import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useAfriHubStore } from "@/lib/store";
 import { useRepository } from "@/hooks/useRepository";
 import { repositoryService } from "@/services/repository.service";
@@ -293,8 +294,7 @@ export default function IssuesPage({ params }: PageProps) {
                 {issue.assignees && issue.assignees.length > 0 && (
                   <div className="flex -space-x-1.5">
                     {issue.assignees.map((assignee) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <AvatarImage
                         key={assignee.id}
                         src={assignee.avatar}
                         alt={assignee.name}

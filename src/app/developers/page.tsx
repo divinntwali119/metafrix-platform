@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { ProfileGridSkeleton } from "@/components/ui/Skeleton";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MemberCover } from "@/components/social/MemberCover";
 import { formatNumber } from "@/lib/utils";
@@ -390,8 +391,7 @@ function DeveloperCard({
             aria-label={`Voir le profil de ${user.name}`}
             className="shrink-0 rounded-full"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <AvatarImage
               src={user.avatar}
               alt=""
               loading="lazy"

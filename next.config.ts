@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https:",
+      `img-src 'self' data: blob: https:${isDevelopment ? " http:" : ""}`,
       "font-src 'self' data:",
       `connect-src 'self'${isDevelopment ? " ws: wss:" : ""}`,
       "media-src 'self' blob: https:",

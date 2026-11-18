@@ -22,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
@@ -121,8 +122,7 @@ export default function DashboardPage() {
         <div className="relative flex flex-col justify-between gap-5 sm:gap-6 lg:flex-row lg:items-center">
           <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-5">
             <div className="relative mt-1 h-14 w-14 shrink-0 sm:mt-0 sm:h-20 sm:w-20">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <AvatarImage
                 src={currentUser.avatar}
                 alt={currentUser.name}
                 className="ui-avatar h-full w-full border-2 border-(--card) object-cover"
@@ -321,8 +321,7 @@ export default function DashboardPage() {
                 <article key={post.id}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={post.author.avatar} alt="" className="ui-avatar h-8 w-8 shrink-0 object-cover" />
+                      <AvatarImage src={post.author.avatar} alt="" className="ui-avatar h-8 w-8 shrink-0 object-cover" />
                       <div className="min-w-0">
                         <p className="truncate text-xs font-semibold text-(--primary-text)">{post.author.name}</p>
                         <p className="truncate text-[10px] text-(--secondary-text)">@{post.author.username} · {formatDate(post.createdAt)}</p>
@@ -420,8 +419,7 @@ export default function DashboardPage() {
               {suggestedUsers.map((user) => (
                 <div key={user.id} className="flex items-center justify-between gap-2">
                   <Link href={`/developers/${user.username}`} className="flex min-w-0 items-center gap-2.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={user.avatar} alt="" className="ui-avatar h-9 w-9 shrink-0 object-cover" />
+                    <AvatarImage src={user.avatar} alt="" className="ui-avatar h-9 w-9 shrink-0 object-cover" />
                     <span className="min-w-0">
                       <span className="block truncate text-xs font-semibold text-(--primary-text)">{user.name}</span>
                       <span className="block truncate text-[10px] text-(--secondary-text)">@{user.username}</span>

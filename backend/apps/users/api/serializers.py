@@ -1,4 +1,6 @@
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
+from apps.collaborations.models import Board
 from ..models import (
     User,
     Profile,
@@ -44,10 +46,11 @@ class UserSerializer(serializers.ModelSerializer):
         return profile.profile_img.name
     
     def get_repositoriesCount(self, obj: User) -> int:
-        return obj.repos.all().count()
+        return obj.repositories.count()
     
     def get_contributionsCount(self, obj: User) -> int:
-        return sum([team_link.team.boards.filter(repo__isnull=False).count() for team_link in obj.team_links])
+        team_ids = obj.team_links.values_list("team_id", flat=True)
+        return Board.objects.filter(team_id__in=team_ids, repo__isnull=False).count()
         
     def get_followersCount(self, obj: User) -> int:
         return obj.followers.all().count()
@@ -138,4 +141,151 @@ class SettingsSerializer(serializers.ModelSerializer):
             self.fields["defaultNotifEmail"].queryset = ContactEmail.objects.filter(
                 profile__user=request.user
             )
+
+
+class DeveloperSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="pk", read_only=True)
+    name = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
+    bio = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+    website = serializers.SerializerMethodField()
+    skills = serializers.SerializerMethodField()
+    technologies = serializers.SerializerMethodField()
+    followersCount = serializers.SerializerMethodField()
+    followingCount = serializers.SerializerMethodField()
+    repositoriesCount = serializers.SerializerMethodField()
+    contributionsCount = serializers.SerializerMethodField()
+    isFollowed = serializers.SerializerMethodField()
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "name",
+            "avatar",
+            "bio",
+            "location",
+            "website",
+            "skills",
+            "technologies",
+            "followersCount",
+            "followingCount",
+            "repositoriesCount",
+            "contributionsCount",
+            "isFollowed",
+            "createdAt",
+        ]
+
+    def get_name(self, obj: User) -> str:
+        return obj.get_full_name().strip() or obj.username
+
+    def _profile(self, obj: User) -> Profile | None:
+        if not hasattr(obj, "_developer_profile_cache"):
+            try:
+                obj._developer_profile_cache = obj.profile
+            except ObjectDoesNotExist:
+                obj._developer_profile_cache = None
+        return obj._developer_profile_cache
+
+    def get_avatar(self, obj: User) -> str:
+        profile = self._profile(obj)
+        if profile is None or not profile.profile_img:
+            return ""
+        try:
+            return profile.profile_img.url
+        except (ValueError, OSError):
+            return profile.profile_img.name or ""
+
+    def get_bio(self, obj: User) -> str:
+        profile = self._profile(obj)
+        return profile.bio or "" if profile is not None else ""
+
+    def get_location(self, obj: User) -> str:
+        profile = self._profile(obj)
+        return profile.location or "" if profile is not None else ""
+
+    def get_website(self, obj: User) -> str:
+        profile = self._profile(obj)
+        return profile.site_url or "" if profile is not None else ""
+
+    def get_skills(self, obj: User) -> list[str]:
+        return [obj.get_expertise_domain_display()]
+
+    def get_technologies(self, _obj: User) -> list[str]:
+        return []
+
+    def get_followersCount(self, obj: User) -> int:
+        return obj.followers.count()
+
+    def get_followingCount(self, obj: User) -> int:
+        return obj.following.count()
+
+    def get_repositoriesCount(self, obj: User) -> int:
+        return obj.repositories.count()
+
+    def get_contributionsCount(self, obj: User) -> int:
+        team_ids = obj.team_links.values_list("team_id", flat=True)
+        return Board.objects.filter(
+            team_id__in=team_ids,
+            repo__isnull=False,
+        ).count()
+
+    def get_isFollowed(self, obj: User) -> bool:
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return False
+        return obj.followers.filter(follower=request.user).exists()
+
+
+class CurrentUserSerializer(DeveloperSerializer):
+    email = serializers.EmailField(read_only=True)
+    emailVerified = serializers.BooleanField(source="is_email_verified", read_only=True)
+
+    class Meta(DeveloperSerializer.Meta):
+        fields = [*DeveloperSerializer.Meta.fields, "email", "emailVerified"]
+
+
+class CurrentUserUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, min_length=2, max_length=150)
+    bio = serializers.CharField(required=False, allow_blank=True)
+    location = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    website = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        max_length=2048,
+    )
+    email = serializers.EmailField(required=False)
+
+    def validate_email(self, value: str) -> str:
+        if value.strip().casefold() != self.instance.email.casefold():
+            raise serializers.ValidationError(
+                "Une nouvelle adresse e-mail doit être vérifiée avant son utilisation."
+            )
+        return value
+
+    def update(self, instance: User, validated_data: dict) -> User:
+        name = validated_data.pop("name", None)
+        if name is not None:
+            name_parts = name.strip().split(maxsplit=1)
+            instance.first_name = name_parts[0]
+            instance.last_name = name_parts[1] if len(name_parts) > 1 else ""
+            instance.save(update_fields=["first_name", "last_name"])
+
+        profile_fields = {
+            field: validated_data[field]
+            for field in ("bio", "location", "website")
+            if field in validated_data
+        }
+        if profile_fields:
+            profile, _ = Profile.objects.get_or_create(user=instance)
+            for field, value in profile_fields.items():
+                model_field = "site_url" if field == "website" else field
+                setattr(profile, model_field, value)
+            profile.save(update_fields=[*{("site_url" if key == "website" else key) for key in profile_fields}, "updated_at"])
+
+        return instance
         

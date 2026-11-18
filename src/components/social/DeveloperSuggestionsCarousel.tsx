@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import type { User } from "@/types";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface DeveloperSuggestionsCarouselProps {
   users: User[];
@@ -162,8 +163,7 @@ export function DeveloperSuggestionsCarousel({
                 }}
               >
                 <span className="h-full w-full overflow-hidden rounded-full border-2 border-white bg-white">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <AvatarImage
                     src={user.avatar}
                     alt=""
                     loading="lazy"

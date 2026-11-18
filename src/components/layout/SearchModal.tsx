@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search, X, FolderGit2, User, CheckCircle2, ArrowRight, MessageSquare, LoaderCircle } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { repositoryService } from "@/services/repository.service";
 import { socialService } from "@/services/social.service";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -280,8 +281,7 @@ export function SearchModal() {
                     className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-[#18181B] border border-transparent hover:border-[#27272A] transition-all text-left group"
                   >
                     <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <AvatarImage
                         src={user.avatar}
                         alt={user.name}
                         className="ui-avatar h-8 w-8 rounded-full object-cover border border-[#27272A]"

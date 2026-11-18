@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import type { NotificationItem } from "@/types";
 import { formatDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -331,8 +332,7 @@ export default function NotificationsPage() {
                           className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 sm:px-4"
                         >
                           <span className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-(--muted)">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
+                            <AvatarImage
                               src={notification.actor.avatar}
                               alt=""
                               loading="lazy"

@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { authService } from "@/services/auth.service";
 import type { User } from "@/types";
 
@@ -241,8 +242,7 @@ function SettingsForm({ currentUser }: { currentUser: User }) {
 
                   <div className="flex items-center gap-4">
                     <span className="h-16 w-16 shrink-0 overflow-hidden rounded-full border border-(--border) bg-(--muted)">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <AvatarImage
                         src={currentUser.avatar}
                         alt={currentUser.name}
                         className="ui-avatar h-full w-full object-cover"

@@ -2,6 +2,7 @@ from rest_framework.test import APITestCase
 
 from apps.repositories.models import Repository
 from apps.users.models import User
+from .api.serializers.team import BoardSerializer
 from .models import Organisation, OrganisationMembership, OrganisationRepository
 
 
@@ -68,3 +69,13 @@ class OrganisationApiTests(APITestCase):
 		response = self.client.post(url, {"repositoryId": repository.pk}, format="json")
 		self.assertEqual(response.status_code, 201)
 		self.assertTrue(OrganisationRepository.objects.filter(repository=repository).exists())
+
+	def test_board_repository_field_uses_repository_primary_key(self):
+		repository = Repository.objects.create(
+			name="board-project", owner=self.owner, access=Repository.Access.PUBLIC
+		)
+		serializer = BoardSerializer()
+
+		selected_repository = serializer.fields["repoSlug"].run_validation(str(repository.pk))
+
+		self.assertEqual(selected_repository, repository)

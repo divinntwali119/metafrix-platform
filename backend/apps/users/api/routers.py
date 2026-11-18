@@ -9,6 +9,12 @@ from .viewsets import (
     SocialAccountViewSet,
     UserViewSet,
 )
+from .views import (
+    CurrentUserView,
+    DeveloperDetailView,
+    DeveloperFollowView,
+    DeveloperListView,
+)
 
 router = DefaultRouter()
 router.register("users", UserViewSet, basename="user")
@@ -18,6 +24,18 @@ router.register("ignored-repositories", IgnoredRepoViewSet, basename="ignored-re
 
 app_name = "users_api"
 urlpatterns = [
+    path("users/me/", CurrentUserView.as_view(), name="current-user"),
+    path("developers/", DeveloperListView.as_view(), name="developer-list"),
+    path(
+        "developers/<str:username>/",
+        DeveloperDetailView.as_view(),
+        name="developer-detail",
+    ),
+    path(
+        "developers/<str:username>/follow/",
+        DeveloperFollowView.as_view(),
+        name="developer-follow",
+    ),
     path(
         "profile/",
         ProfileViewSet.as_view(

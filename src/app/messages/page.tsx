@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { CodeSnippetViewer } from "@/components/ui/CodeSnippetViewer";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatDate } from "@/lib/utils";
@@ -307,8 +308,7 @@ export default function MessagesPage() {
                       </span>
                     ) : (
                       <span className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-(--muted)">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <AvatarImage
                           src={participant?.avatar}
                           alt=""
                           loading="lazy"
@@ -377,8 +377,7 @@ export default function MessagesPage() {
                     </span>
                   ) : (
                     <span className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-(--muted)">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <AvatarImage
                         src={otherParticipant?.avatar}
                         alt=""
                         className="ui-avatar h-full w-full object-cover"

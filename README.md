@@ -51,7 +51,11 @@ L’application sera disponible sur [http://localhost:3000](http://localhost:300
 Le proxy Next appelle AfriHub Django sur `http://127.0.0.1:8001` par défaut,
 pour éviter les conflits avec d’autres projets Django utilisant le port 8000. Configurez
 `BACKEND_API_URL` dans `.env.local` si nécessaire; cette variable reste côté
-serveur et ne doit pas être préfixée par `NEXT_PUBLIC_`.
+serveur et ne doit pas être préfixée par `NEXT_PUBLIC_`. Pour afficher les
+avatars et images renvoyés sous `/media/...`, le frontend utilise en local le
+même hostname sur le port Django 8001. Si le serveur média a une autre origine,
+définissez `NEXT_PUBLIC_BACKEND_MEDIA_URL` sur son origine publique; les URL
+d’image absolues renvoyées par l’API sont utilisées telles quelles.
 
 ## Démarrage du backend local
 

@@ -21,6 +21,7 @@ import {
 import { useAfriHubStore } from "@/lib/store";
 import { useEffect, useState } from "react";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { authService } from "@/services/auth.service";
 import { socialService } from "@/services/social.service";
 
@@ -219,8 +220,7 @@ export function Navbar() {
                 aria-label="Ouvrir le menu du compte"
                 className="rounded-full p-0.5 transition-opacity hover:opacity-80"
               >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <AvatarImage
                 src={currentUser.avatar}
                 alt={currentUser.name}
                 className="ui-avatar h-8 w-8 rounded-full border border-[#30363d] object-cover"

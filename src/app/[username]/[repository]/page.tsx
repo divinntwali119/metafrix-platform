@@ -16,6 +16,7 @@ import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
 import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
 import { LoadingScreen } from "@/components/layout/LoadingScreen";
 import { CodeSnippetViewer } from "@/components/ui/CodeSnippetViewer";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useRepository } from "@/hooks/useRepository";
 import { repositoryService } from "@/services/repository.service";
 import { formatDate } from "@/lib/utils";
@@ -270,8 +271,7 @@ function RepositoryCodeContent({
               {latestCommit ? (
                 <>
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AvatarImage
                       src={latestCommit.author.avatar}
                       alt={latestCommit.author.name}
                       className="ui-avatar h-5 w-5 shrink-0 rounded-full object-cover"
@@ -438,8 +438,7 @@ function RepositoryCodeContent({
             <div className="p-5 rounded-2xl bg-[#111113] border border-[#27272A] space-y-3">
               <h3 className="text-sm font-semibold text-white">Propriétaire</h3>
               <div className="flex items-center -space-x-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <AvatarImage
                   src={repo.owner.avatar}
                   alt={repo.owner.name}
                   className="ui-avatar h-8 w-8 rounded-full border-2 border-[#111113] object-cover"

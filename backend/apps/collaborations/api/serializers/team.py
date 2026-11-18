@@ -153,7 +153,7 @@ class ToDoListSerializer(NestedSerializerMixin, serializers.ModelSerializer):
         
 # Board serializer
 class BoardSerializer(NestedSerializerMixin, serializers.ModelSerializer):
-    repoSlug = serializers.SlugRelatedField(source='repo', slug_field='slug', queryset=Repository.objects.all(), write_only=True)
+    repoSlug = serializers.PrimaryKeyRelatedField(source='repo', queryset=Repository.objects.all(), write_only=True)
     teamSlug = serializers.SlugRelatedField(source='team', slug_field='slug', queryset=Team.objects.all(), write_only=True)
     teamId = serializers.CharField(source='team_id', read_only=True)
     repo = serializers.SerializerMethodField()

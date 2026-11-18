@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { socialService } from "@/services/social.service";
 import { repositoryService } from "@/services/repository.service";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -170,8 +171,7 @@ export default function OrganizationDetailPage({ params }: PageProps) {
       <div className="rounded-2xl bg-[#111113] border border-[#27272A] p-6 sm:p-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <AvatarImage
               src={org.avatar}
               alt={org.name}
               className="ui-avatar h-20 w-20 shrink-0 rounded-full border border-[#27272A] object-cover shadow-md"
@@ -334,8 +334,7 @@ export default function OrganizationDetailPage({ params }: PageProps) {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <Link href={`/developers/${user.username}`} className="flex min-w-0 items-center gap-2.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AvatarImage
                       src={user.avatar}
                       alt={user.name}
                       className="ui-avatar h-8 w-8 shrink-0 rounded-full object-cover"

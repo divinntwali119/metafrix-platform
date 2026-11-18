@@ -1,7 +1,7 @@
 import hashlib
 import re
 from datetime import timedelta
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from django.core import mail
 from django.core.cache import cache
@@ -410,6 +410,19 @@ class DeveloperDirectoryApiTests(APITestCase):
 		self.assertEqual(profile["username"], "alice")
 		self.assertEqual(profile["skills"], [self.alice.get_expertise_domain_display()])
 		self.assertNotIn("email", profile)
+
+	def test_public_profile_supports_an_encoded_email_username(self):
+		user = User.objects.create_user(
+			username="developer@example.test",
+			email="developer@example.test",
+			password="test-password",
+			is_active=True,
+		)
+
+		response = self.client.get(f"/api/developers/{quote(user.username, safe='')}/")
+
+		self.assertEqual(response.status_code, 200, response.data)
+		self.assertEqual(response.data["username"], user.username)
 
 	def test_follow_is_authenticated_idempotent_and_notifies_once(self):
 		self.assertEqual(self.client.put("/api/developers/alice/follow/").status_code, 401)

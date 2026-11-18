@@ -6,6 +6,7 @@ import { RepoHeader } from "@/components/repository/RepoHeader";
 import { RepositoryNotFound } from "@/components/repository/RepositoryNotFound";
 import { RepositoryUnavailable } from "@/components/repository/RepositoryUnavailable";
 import { LoadingScreen } from "@/components/layout/LoadingScreen";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useRepository } from "@/hooks/useRepository";
 import { repositoryService } from "@/services/repository.service";
 import { formatDate } from "@/lib/utils";
@@ -103,8 +104,7 @@ function RepositoryCommitsContent({
               className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#18181B] transition-colors"
             >
               <div className="flex items-start gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <AvatarImage
                   src={commit.author.avatar}
                   alt={commit.author.name}
                   className="ui-avatar mt-0.5 h-8 w-8 shrink-0 rounded-full border border-[#27272A] object-cover"

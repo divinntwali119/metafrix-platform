@@ -1,4 +1,5 @@
 import { apiClient } from "./api";
+import { normalizeApiResponse } from "@/lib/api-normalizers";
 import { User } from "@/types";
 
 export interface LoginPayload {
@@ -80,7 +81,7 @@ async function postAuth<T>(path: string, payload?: unknown): Promise<T> {
   if (!response.ok) {
     throw new Error(getAuthErrorMessage(data, response.status));
   }
-  return data as T;
+  return normalizeApiResponse(data) as T;
 }
 
 export const authService = {

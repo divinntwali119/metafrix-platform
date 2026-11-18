@@ -4,6 +4,7 @@ import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FolderGit2, ArrowRight, Lock, Globe, AlertCircle } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { repositoryService } from "@/services/repository.service";
 import { socialService } from "@/services/social.service";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -149,8 +150,7 @@ export default function NewRepositoryPage({ searchParams }: PageProps) {
                 {organization ? "Propriétaire du dépôt" : "Propriétaire"}
               </label>
               <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#18181B] border border-[#27272A] text-xs text-white">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <AvatarImage
                   src={organization?.avatar || currentUser.avatar}
                   alt={organization?.name || currentUser.name}
                   className="ui-avatar h-5 w-5 rounded-full object-cover"

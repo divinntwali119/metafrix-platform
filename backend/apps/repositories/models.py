@@ -1,7 +1,6 @@
 from django.db import models
 from django.db.models import Q
 from django.conf import settings
-from django.utils.text import slugify
 
 # Repo model
 class Repository(models.Model):
@@ -9,7 +8,6 @@ class Repository(models.Model):
         PUBLIC = 'publique', "Publique"
         PRIVATE = 'private', "Privée"
     
-    slug = models.SlugField(primary_key=True, blank=True)
     name = models.CharField(max_length=120)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='repositories')
     access = models.CharField(max_length=20, choices=Access.choices)
@@ -40,20 +38,6 @@ class Repository(models.Model):
             return self.settings.default_branch
         except RepositorySettings.DoesNotExist:
             return "main"
-        
-    def save(self, *args, **kwargs) -> None:
-        if len(self.slug) == 0:
-            base_slug = self.owner.username + '__' + slugify(self.name)[:90]
-            candidate = base_slug
-            suffix = 2
-            
-            while Repository.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
-                candidate = f"{base_slug[:90]}-{suffix}"
-                suffix += 1
-                
-            self.slug = candidate
-        super().save(*args, **kwargs)
-        
     
 # Repositories settings
 class RepositorySettings(models.Model):

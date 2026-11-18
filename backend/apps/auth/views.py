@@ -30,7 +30,7 @@ from apps.auth.serializers import (
     PasswordResetConfirmSerializer,
     RegistrationSerializer,
 )
-from apps.users.api.serializers import UserSerializer
+from apps.users.api.serializers import CurrentUserSerializer
 from apps.users.services import register_user
 
 User = get_user_model()
@@ -44,9 +44,9 @@ def _token_response(user, request, response_status=status.HTTP_200_OK):
 		{
 			"access": str(refresh.access_token),
 			"refresh": str(refresh),
-			"user": UserSerializer(
+			"user": CurrentUserSerializer(
 				user,
-				context={"request": request, "include_email": True},
+				context={"request": request},
 			).data,
 		},
 		status=response_status,

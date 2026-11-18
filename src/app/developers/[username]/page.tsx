@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { PostCard } from "@/components/social/PostCard";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { MemberCover } from "@/components/social/MemberCover";
 import { socialService } from "@/services/social.service";
 import { repositoryService } from "@/services/repository.service";
@@ -51,9 +52,16 @@ interface PageProps {
 
 type ProfileTab = "overview" | "repositories" | "posts" | "activity";
 
+function decodeRouteUsername(username: string): string {
+  try {
+    return decodeURIComponent(username);
+  } catch {
+    return username;
+  }
+}
+
 export default function DeveloperProfilePage({ params, searchParams }: PageProps) {
-  const resolvedParams = use(params);
-  const { username } = resolvedParams;
+  const username = decodeRouteUsername(use(params).username);
   const requestedTab = use(searchParams).tab;
   const initialTab: ProfileTab = requestedTab === "repositories" || requestedTab === "posts" || requestedTab === "activity"
     ? requestedTab
@@ -171,7 +179,7 @@ export default function DeveloperProfilePage({ params, searchParams }: PageProps
 
   const user = isDemoMode
     ? users.find((candidate) => candidate.username.toLowerCase() === username.toLowerCase())
-    : apiUser?.username.toLowerCase() === username.toLowerCase() ? apiUser : null;
+    : loadedProfileKey === profileKey ? apiUser : null;
 
   if (!isDemoMode && isLoading) {
     return <div className="mx-auto max-w-7xl space-y-4 px-4 py-8" role="status" aria-busy="true"><div className="h-48 animate-pulse rounded-2xl bg-(--muted)" /><div className="h-64 animate-pulse rounded-2xl bg-(--muted)" /><span className="sr-only">Chargement du profil…</span></div>;
@@ -279,8 +287,7 @@ function DeveloperProfileContent({
         {/* Profile Card Header */}
         <div className="relative -mt-20 flex flex-col justify-between gap-6 pb-6 md:flex-row md:items-end">
           <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <AvatarImage
               src={user.avatar}
               alt={user.name}
               className="ui-avatar h-28 w-28 shrink-0 rounded-full border-4 border-background object-cover sm:h-32 sm:w-32"

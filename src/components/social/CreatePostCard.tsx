@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Post } from "@/types";
 import { socialService } from "@/services/social.service";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -103,8 +104,7 @@ export function CreatePostCard({ onCreated }: CreatePostCardProps) {
   return (
     <div className="ui-panel ui-panel-pearl space-y-3 p-3 sm:p-4">
       <div className="flex items-start gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+          <AvatarImage
           src={currentUser.avatar}
           alt={currentUser.name}
           className="ui-avatar h-10 w-10 shrink-0 rounded-full border object-cover"

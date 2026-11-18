@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAfriHubStore } from "@/lib/store";
 import { CreatePostCard } from "@/components/social/CreatePostCard";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { PostCard } from "@/components/social/PostCard";
 import { PostCardSkeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -339,8 +340,7 @@ export default function FeedPage() {
                     href={`/developers/${user.username}`}
                     className="flex items-center gap-2.5 min-w-0"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AvatarImage
                       src={user.avatar}
                       alt={user.name}
                       className="ui-avatar h-8 w-8 shrink-0 rounded-full object-cover"

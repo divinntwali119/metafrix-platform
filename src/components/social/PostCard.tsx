@@ -21,6 +21,7 @@ import { Comment, Post } from "@/types";
 import { useAfriHubStore } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 import { CodeSnippetViewer } from "../ui/CodeSnippetViewer";
+import { AvatarImage } from "../ui/AvatarImage";
 import { socialService } from "@/services/social.service";
 import { getApiErrorMessage } from "@/lib/api-error";
 
@@ -204,8 +205,7 @@ export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProp
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <Link href={authorHref}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <AvatarImage
               src={post.author.avatar}
               alt={post.author.name}
               className="ui-avatar h-10 w-10 rounded-full border border-[#30363d] object-cover transition-opacity hover:opacity-85"
@@ -377,8 +377,7 @@ export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProp
         <div className="animate-in mt-4 space-y-4 border-t border-[#30363d] pt-4 duration-200 fade-in">
           {/* New Comment Input */}
           {isAuthenticated || isDemoMode ? <form onSubmit={handleCommentSubmit} className="flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <AvatarImage
               src={currentUser.avatar}
               alt={currentUser.name}
               className="ui-avatar h-7 w-7 shrink-0 rounded-full object-cover"
@@ -404,8 +403,7 @@ export function PostCard({ post: initialPost, onUpdate, onDelete }: PostCardProp
             {isLoadingComments && <p className="text-xs text-[#8b949e]">Chargement des commentaires…</p>}
             {postComments.map((comment) => (
               <div key={comment.id} className="flex items-start gap-2.5 text-xs">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <AvatarImage
                   src={comment.author.avatar}
                   alt={comment.author.name}
                   className="ui-avatar mt-0.5 h-6 w-6 shrink-0 rounded-full object-cover"

@@ -43,6 +43,8 @@ class User(AbstractUser):
         TRANSLATOR = 'translator', "Traducteur ou traductrice"
         OTHER = 'other', "Autre"
         
+    # Keep AbstractUser's integer `id` primary key; existing foreign keys and
+    # migrations depend on it. `username` remains the account handle.
     email = models.EmailField(unique=True)
     is_email_verified = models.BooleanField(default=False)
     auth_version = models.PositiveIntegerField(default=0)

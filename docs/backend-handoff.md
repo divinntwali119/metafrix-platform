@@ -14,9 +14,10 @@ un module mais absente de cet agrégateur n’est pas disponible sous `/api/`.
   navigateur de ce projet, les JWT sont conservés dans des cookies `HttpOnly`
   par le BFF Next : le client ne doit pas les stocker dans `localStorage` ni
   appeler directement le point d’échange OAuth.
-- Les UUID et les clés de dépôts (slugs) sont des chaînes côté JSON; les clés
-  auto-incrémentées restent numériques. Les références suivent le type de clé
-  primaire de la ressource liée.
+- Les UUID sont des chaînes. Les dépôts ont une clé primaire auto-incrémentée
+  numérique, exposée comme chaîne dans leur DTO `id`; les autres clés
+  auto-incrémentées restent numériques. Les références suivent la clé primaire
+  de la ressource liée.
 - Les dates sont des chaînes ISO, sauf les champs explicitement formatés
   `YYYY-MM-DD HH:mm` dans les sérialiseurs utilisateurs. Les dates seules sont
   `YYYY-MM-DD`.
@@ -40,7 +41,7 @@ gérer les jetons.
 | Méthode et route | Accès | Entrée | Réponse / comportement |
 | --- | --- | --- | --- |
 | `POST /auth/register/` | Public | `{ name: string, username: string, email: string, password: string }` | `201`: `{ verification_required: true, email_sent: boolean, detail: string }`. Le mot de passe doit faire 10 à 128 caractères; le compte reste inactif jusqu’à confirmation. Crée aussi le profil, l’e-mail primaire et les paramètres du compte. |
-| `POST /auth/login/` | Public | `{ email: string, password: string }` | La valeur `email` accepte un e-mail **ou** un username. Succès : `{ access: string, refresh: string, user: User }`. Un e-mail non confirmé répond 403. |
+| `POST /auth/login/` | Public | `{ email: string, password: string }` | La valeur `email` accepte un e-mail **ou** un username. Succès : `{ access: string, refresh: string, user: CurrentUser }`. Un e-mail non confirmé répond 403. |
 | `POST /auth/email/verify/` | Public | `{ token: string }` | Confirme et active le compte; réponse `{ detail: string }`. Le lien est à usage unique et expire. |
 | `POST /auth/email/resend-verification/` | Public | `{ email: string }` | Réponse générique `{ detail: string }`, même si aucun compte en attente ne correspond. |
 | `POST /auth/password/reset/` | Public | `{ email: string }` | Réponse générique `{ detail: string }`; ne révèle pas l’existence du compte. |
@@ -75,7 +76,12 @@ automatiquement et peuvent être consultés ou modifiés via `/profile/` et
 
 | Méthode et route | Entrée | Réponse / règle |
 | --- | --- | --- |
-| `GET /users/{username}/` | — | Profil de compte sérialisé. `{username}` doit être le username du compte connecté. |
+| `GET /users/me/` | — | Compte courant sous la forme `Developer` ci-dessous, avec `email` et `emailVerified`; authentification obligatoire. |
+| `PATCH /users/me/` | `{ name?, bio?, location?, website? }` | Met à jour le nom et les champs de profil courants. Une modification d’e-mail est refusée tant que le parcours de vérification dédié n’existe pas. |
+| `GET /developers/?search=&expertise=&page=&page_size=` | Public | Annuaire paginé de comptes actifs sous la forme `Developer`; l’e-mail n’est pas exposé. |
+| `GET /developers/{username}/` | Public | Détail public d’un développeur actif sous la forme `Developer`; renvoie 404 si absent ou désactivé. |
+| `PUT`, `DELETE /developers/{username}/follow/` | Authentifié | Suit/ne suit plus le compte; `{ isFollowed: boolean, followersCount: number }`. |
+| `GET /users/{username}/` | — | Profil de compte `LegacyUserDto`. `{username}` doit être le username du compte connecté. |
 | `PUT`, `PATCH /users/{username}/` | Champs modifiables de `User` | Mise à jour du compte courant uniquement. Les champs calculés sont en lecture seule. |
 | `GET /profile/` | — | Profil courant, ses e-mails et comptes sociaux. |
 | `PUT`, `PATCH /profile/` | Champs éditables de profil | Modifie le profil courant; les collections imbriquées sont en lecture seule ici. L’image se transmet en multipart. |
@@ -85,13 +91,14 @@ automatiquement et peuvent être consultés ou modifiés via `/profile/` et
 | `PUT`, `PATCH`, `DELETE /contact-emails/{id}/` | Update : `{ email?: string, type?: ContactEmailType }` | Ressource limitée au propriétaire. |
 | `GET /settings/` | — | Paramètres du compte et dépôts ignorés en lecture seule imbriquée. |
 | `PUT`, `PATCH /settings/` | Champs de `Settings` (ci-dessous) | Met à jour les paramètres du compte courant. `defaultNotifEmail` ne peut référencer qu’un e-mail de ce compte. |
-| `GET`, `POST /ignored-repositories/` | Création : `{ repo: string }` | Liste/ajoute un dépôt ignoré; le backend impose le compte Settings courant. `repo` est la clé primaire slug du dépôt. |
+| `GET`, `POST /ignored-repositories/` | Création : `{ repo: number }` | Liste/ajoute un dépôt ignoré; le backend impose le compte Settings courant. `repo` est l’identifiant numérique du dépôt. |
 | `PUT`, `PATCH`, `DELETE /ignored-repositories/{id}/` | Update : `{ repo?: string }` | Ressource limitée au compte propriétaire. `userSettings` et `createdAt` sont en lecture seule. |
 
 ### Types JSON compte/profil
 
 ```ts
-type User = {
+type LegacyUserDto = {
+  // Forme utilisée par les auteurs/propriétaires imbriqués dans plusieurs API.
   username: string;
   firstName: string;
   lastName: string;
@@ -103,6 +110,29 @@ type User = {
   contributionsCount: number;
   followersCount: number;
   followingCount: number;
+};
+
+type Developer = {
+  id: string; // le backend peut fournir un nombre; le frontend le convertit en chaîne
+  username: string;
+  name: string;
+  avatar: string; // URL, chemin media, ou chaîne vide
+  bio: string;
+  location: string;
+  website: string;
+  skills: string[];
+  technologies: string[];
+  followersCount: number;
+  followingCount: number;
+  repositoriesCount: number;
+  contributionsCount: number;
+  isFollowed: boolean;
+  createdAt: string;
+};
+
+type CurrentUser = Developer & {
+  email: string;
+  emailVerified: boolean;
 };
 
 type ContactEmailType = "primary" | "publiic" | "private" | "displayed";
@@ -144,17 +174,36 @@ type Settings = {
 };
 
 type IgnoredRepository = {
-  repo: string; // slug Repository
+  repo: number; // identifiant numérique Repository
   userSettings: number; // lecture seule
   createdAt: string; // "YYYY-MM-DD HH:mm"
 };
 ```
 
-Le compte est une ressource distincte du profil. Les sérialiseurs du compte
-exposent `username`, `email`, `firstName`, `lastName` et `expertiseDomain`;
-`avatar`, `createdAt` et les compteurs sont calculés/en lecture seule. Les
-domaines d’expertise correspondent aux valeurs `User.Domain` définies par le
-backend.
+Le compte est une ressource distincte du profil. Les réponses d’authentification
+et `/users/me/` utilisent `CurrentUser`; l’annuaire utilise `Developer`. Les
+sérialiseurs imbriqués existants peuvent encore renvoyer `LegacyUserDto` (sans
+`id`, `name`, `bio` ni `skills`). Le frontend doit normaliser ces DTO dans la
+forme UI `User` définie dans `src/types/index.ts`, plutôt que supposer une seule
+forme brute du backend. Les domaines d’expertise proviennent des choix
+`User.Domain` définis par le backend.
+
+### Préparation du frontend aux DTO
+
+- `src/lib/api-normalizers.ts` accepte les variantes actuelles et historiques
+  des utilisateurs, convertit les compteurs/identifiants et complète les champs
+  absents avec des valeurs sûres pour l’interface.
+- Les chemins d’avatar relatifs du backend sont résolus sous `/media/` sur le
+  serveur Django (hostname courant et port 8001 en local; configurer
+  `NEXT_PUBLIC_BACKEND_MEDIA_URL` si l’origine média diffère). Une
+  valeur vide ou une image inaccessible doit afficher
+  `/avatar-placeholder.svg`; les composants utilisent `AvatarImage` pour éviter
+  de produire un `<img src="">`.
+- Les composants UI consomment les objets normalisés. Lorsqu’un endpoint ajoute
+  des champs ou change de casse, adapter le normaliseur à la frontière API au
+  lieu de propager des conditions spécifiques à chaque écran.
+- Les publications peuvent fournir `comments` sans `commentsCount`; le
+  normaliseur dérive le compteur de la liste quand le champ calculé manque.
 
 ## Organisations et collaboration
 
@@ -175,9 +224,9 @@ de collaboration visibles dans son organisation.
 | `GET /organizations/{slug}/repositories/` | Public | — | Liste non paginée des dépôts publics associés. |
 | `POST /organizations/{slug}/repositories/` | Owner/admin | `{ repositoryId: string }` | Associe un dépôt public possédé par l’utilisateur; `{ repositoryId, created }`. |
 | `DELETE /organizations/{slug}/repositories/{repository_id}/` | Owner/admin | — | Retire l’association, `204`. Voir la limite d’identifiant numérique ci-dessous. |
-| `GET`, `POST /teams/` | Membre requis pour l’organisation | Création : `{ name: string, organisationSlug: string, createdById?: string \| null, imageProfile?: File }` | Liste des teams auxquelles l’appelant appartient ou crée une team. `slug` est généré. |
+| `GET`, `POST /teams/` | Membre requis pour l’organisation | Création : `{ name: string, organisationSlug: string, createdById?: number \| null, imageProfile?: File }` | Liste des teams auxquelles l’appelant appartient ou crée une team. `slug` est généré. |
 | `GET`, `PUT`, `PATCH`, `DELETE /teams/{slug}/` | Membre de l’organisation de la team | Update via champs Team | CRUD filtré par appartenance. Les détails membres/boards dépendent de la session et du serializer. |
-| `GET`, `POST /boards/` | Membre de l’organisation de la team | Création : `{ name: string, teamSlug: string, repoSlug: string, deadline?: string \| null }` | `repoSlug` et `teamSlug` sont des slugs; réponse inclut le dépôt et les champs imbriqués quand disponibles. |
+| `GET`, `POST /boards/` | Membre de l’organisation de la team | Création : `{ name: string, teamSlug: string, repoSlug: string \| number, deadline?: string \| null }` | Malgré son nom historique, `repoSlug` reçoit l’identifiant primaire numérique du dépôt; `teamSlug` reste le slug de Team. La réponse inclut le dépôt et les champs imbriqués quand disponibles. |
 | `GET`, `PUT`, `PATCH`, `DELETE /boards/{id}/` | Membre de l’organisation de la team | `id` UUID | CRUD filtré par appartenance. |
 | `GET`, `POST /notes/` | Membre de l’organisation du board | Création : `{ title: string, description?: string \| null, boardId: string, authorId?: string \| null, color?: NoteColor }` | Création/réponse Note; `authorId` est l’identifiant UUID d’un `Member`, pas un username. |
 | `GET`, `PUT`, `PATCH`, `DELETE /notes/{id}/` | Membre de l’organisation du board | `id` UUID | CRUD sur la note. |
@@ -192,8 +241,8 @@ de collaboration visibles dans son organisation.
 Les identifiants des organisations, boards, notes, attachments, todo-lists et
 tasks sont des UUID au format chaîne. Le slug de team est une chaîne.
 `boardId`/`todoListId` sont des UUID; `teamSlug`, `organisationSlug` et
-`repoSlug` sont des slugs. `createdById` est le username (clé User),
-`authorId`, `uploadedById` et `assignedToId` sont des UUID de `Member`.
+`repoSlug` est l’identifiant numérique du dépôt (le nom du champ reste historique); `teamSlug` est un slug. `createdById` est l’identifiant numérique du compte
+User. `authorId`, `uploadedById` et `assignedToId` sont des UUID de `Member`.
 Ces références sont acceptées en écriture et ne sont pas incluses dans la
 réponse sous ces mêmes clés. Les clés de réponse correspondantes sont
 `createdBy`, `author`, `uploadedBy` et `assignedTo`.
@@ -294,12 +343,11 @@ type Task = {
 
 ### Limites d’accès et d’identifiants à connaître
 
-- Le routeur des collaborations contraint `user_id` des membres à des chiffres,
-  alors que la clé primaire User est le username (chaîne). Une route membre ne
-  pourra donc pas résoudre la plupart des usernames.
-- Le retrait d’un dépôt d’organisation contraint `repository_id` à des chiffres,
-  alors que la clé primaire Repository est un slug. Le détail des dépôts utilise
-  donc un type de clé incompatible avec cette route de retrait.
+- Le routeur des membres d’organisation attend l’identifiant numérique de
+  l’utilisateur dans `{user_id}`; ne pas lui passer son username.
+- Les routes de dépôt des organisations reçoivent l’identifiant numérique
+  Repository sous forme de chaîne dans l’URL; cette valeur correspond à la clé
+  primaire du dépôt.
 - Les permissions CRUD des ressources team/board/note/attachment/todo/task
   vérifient l’appartenance à l’organisation, pas le rôle `owner/admin/member`.
   Pour les créations, le backend vérifie le lien via `organisationSlug`,
@@ -311,17 +359,18 @@ type Task = {
 
 ## Dépôts, Git, issues et pull requests
 
-Les dépôts ont une clé primaire slug (chaîne), par exemple
-`alice__mon-projet`. `isPrivate` est un booléen dans l’API, même si le modèle
-stocke une valeur textuelle. Un dépôt privé est volontairement indistinguable
-d’un dépôt absent pour un non-propriétaire.
+Les dépôts utilisent la clé primaire numérique auto-incrémentée définie par les
+migrations. Le DTO expose `id` comme une chaîne numérique, et les routes
+`repository_id` utilisent cette même clé. `isPrivate` est un booléen dans l’API,
+même si le modèle stocke une valeur textuelle. Un dépôt privé est volontairement
+indistinguable d’un dépôt absent pour un non-propriétaire.
 
 | Méthode et route | Accès | Entrée / query | Réponse / comportement |
 | --- | --- | --- | --- |
 | `GET /repositories/?owner=&search=&page=&page_size=` | Public | Recherche par nom, username propriétaire, description ou langage; `page_size` max 100 | Liste paginée des dépôts publics et des dépôts privés du compte connecté. |
 | `POST /repositories/` | Authentifié | `{ name: string, description?: string, isPrivate?: boolean, language?: string, topics?: string[], license?: string \| null, initializeReadme?: boolean, ... }` | Crée dépôt Git et settings; `201 Repository`. Nom 1–120 caractères alphanumériques, `.`, `_`, `-`; max 20 topics de 40 caractères. |
 | `GET /repositories/{owner}/{name}/` | Public ou propriétaire | — | Détail Repository; `404` pour dépôt privé non autorisé. |
-| `PATCH /repositories/{repository_id}/` | Propriétaire authentifié | `{ description?: string \| null, isPrivate?: boolean }` | Modifie uniquement description/visibilité. **Route numériquement contrainte, incompatible avec les slugs courants** (voir limites). |
+| `PATCH /repositories/{repository_id}/` | Propriétaire authentifié | `{ description?: string \| null, isPrivate?: boolean }` | Modifie uniquement description/visibilité; `repository_id` est l’identifiant numérique exposé en chaîne dans le DTO. |
 | `GET /repositories/{repository_id}/branches/` | Public ou propriétaire | — | `{ results: string[] }` branches Git. |
 | `GET /repositories/{repository_id}/tree/?path=&branch=` | Public ou propriétaire | `path`, `branch` facultatifs | `{ results: ... }` entrée d’arborescence. |
 | `GET /repositories/{repository_id}/blob/?path=&branch=` | Public ou propriétaire | `path`, `branch` facultatifs | Contenu texte; chemin invalide 400, fichier absent 404, blob trop volumineux 413, binaire 415. |
@@ -338,7 +387,7 @@ uniquement l’état et le compteur, et aucune route ne liste les étoiles.
 
 ```ts
 type Repository = {
-  id: string; // slug, pas un nombre
+  id: string; // identifiant numérique sérialisé en chaîne
   name: string;
   owner: User;
   description: string | null;
@@ -392,12 +441,23 @@ type PullRequest = {
 };
 ```
 
-**Blocage important :** les routes Git, metadata, star, watch, issues et pulls
-utilisent `<int:repository_id>`, alors que `Repository.pk`/`Repository.id` est
-un slug tel que `username__name`. Elles sont bien déclarées mais ne peuvent pas
-résoudre les IDs renvoyés par `Repository`. Utiliser `GET
-/repositories/{owner}/{name}/` pour le détail en attendant que les converters
-soient alignés; les autres routes nécessitent une correction backend.
+Les routes Git, metadata, star, watch, issues et pulls reçoivent toutes
+l’identifiant numérique retourné par `Repository.id`. Le chemin du dépôt Git
+sur disque reste basé sur le propriétaire et le nom du dépôt, pas sur un slug
+stocké dans la base.
+
+## Publications et fil social
+
+Les routes `apps/posts/api/urls.py` sont montées sous `/api/`. La lecture du fil
+est publique; les créations, commentaires et réactions nécessitent une session.
+
+| Méthode et route | Accès | Comportement |
+| --- | --- | --- |
+| `GET /posts/?author=&page=&page_size=` | Public | Fil paginé; `author` filtre par username (y compris les usernames e-mail). Les publications associées à des dépôts privés sont masquées aux visiteurs non autorisés. |
+| `POST /posts/` | Authentifié | Crée une publication avec texte, extrait de code ou média. |
+| `GET`, `POST /posts/{uuid}/comments/` | Lecture publique si publication visible; écriture authentifiée | Liste/ajoute un commentaire. |
+| `PUT`, `DELETE /posts/{uuid}/like/` | Authentifié | Ajoute/retire une réaction « j’aime ». |
+| `PUT`, `DELETE /posts/{uuid}/bookmark/` | Authentifié | Ajoute/retire un signet. |
 
 ## Notifications
 
@@ -439,13 +499,20 @@ Les modules suivants ont des URLConf, mais ne figurent pas dans
 `backend/apps/api/urls.py`; ils ne sont donc pas exposés par la configuration
 actuelle :
 
-- Posts : `apps/posts/api/urls.py` (commentaires/réactions/publications).
 - Messagerie : `apps/messaging/api/urls.py` (conversations/messages).
+<<<<<<< HEAD
 - Découverte utilisateurs : `apps/users/urls.py` (`/users/me/`, `/developers/`,
   détail et suivi développeur).
 - Aucun endpoint `/api/health/` n’est enregistré dans l’agrégateur actuel;
   pourtant, le healthcheck backend de `compose.yaml` interroge cette URL et
   échoue tant qu’une route correspondante n’est pas ajoutée.
+=======
+- La racine `/health/` n’est pas incluse non plus dans l’agrégateur actuel.
+>>>>>>> 1d8386a (Fix developer profiles and repository loading)
+
+La découverte utilisateurs est désormais montée via
+`apps/users/api/routers.py` (`/users/me/`, `/developers/`, détail et suivi).
+Le vieux `apps/users/urls.py` n’est pas la source de ces routes.
 
 Ne pas brancher ces fonctionnalités frontend sur les chemins ci-dessus avant
 leur inclusion et la validation de leurs vues/imports. Le fichier
@@ -461,16 +528,17 @@ leur inclusion et la validation de leurs vues/imports. Le fichier
   ne répare pas non plus les objets manquants.
 - `/ignored-repositories/` crée avec `request.user.setting`; si les settings
   manquent, cette création échoue au lieu de créer implicitement les settings.
-- `User.avatar` est actuellement le nom de fichier du profil, alors que
-  `Profile.profileImg` est rendu par le champ image. Le frontend ne doit pas
-  supposer que `avatar` est une URL absolue.
+- `User.avatar` peut être vide ou être un nom de fichier; certains serializers
+  renvoient plutôt un chemin media. Le normaliseur frontend transforme les
+  chemins relatifs en URL `/media/...`; `AvatarImage` utilise l’image de
+  remplacement pour les valeurs vides et les chargements échoués.
 - `RepositorySettingsSerializer` existe, mais aucun endpoint de lecture ou
   d’écriture des paramètres du dépôt n’est enregistré.
 - Les endpoints Issue/Pull Request créent seulement des enregistrements métier :
   pas de commentaires/assignations d’issue, diff, revue ou merge.
-- Le contrôle Django `manage.py check` échoue actuellement sur
-  `posts.ReelReaction` : sa contrainte de modèle réfère à un champ `type`
-  inexistant. Cela doit être corrigé avant une certification backend complète.
+- Dernière vérification locale : `python manage.py check` et les 16 tests
+  `apps.users` passent. Refaire ces contrôles après les prochaines migrations
+  ou modifications backend.
 
 ### Contrôles de contrat vérifiés
 
