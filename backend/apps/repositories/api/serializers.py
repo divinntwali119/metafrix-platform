@@ -204,7 +204,7 @@ class IssueAttachmentSerializer(serializers.ModelSerializer):
 
 class IssueSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
-    repositoryId = serializers.PrimaryKeyRelatedField(source='repo_id', write_only=True)
+    repositoryId = serializers.CharField(source='repo_id', read_only=True)
     number = serializers.IntegerField(source='relative_id')
     body = serializers.CharField(source='description')
     author = UserSerializer(source='submitted_by', read_only=True)
@@ -306,7 +306,7 @@ class PullRequestSerializer(serializers.ModelSerializer):
 
 # Star serializer
 class StarSerializer(serializers.ModelSerializer):
-    starredBy = serializers.PrimaryKeyRelatedField(source='starred_by')
+    starredBy = serializers.PrimaryKeyRelatedField(source='starred_by', read_only=True)
     starredAt = serializers.DateTimeField(source='starred_at')
 
     class Meta:
