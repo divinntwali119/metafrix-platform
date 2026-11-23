@@ -33,14 +33,18 @@ def read_secret(name: str, default: str = "") -> str:
 
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 NUM_PROXIES = env.int("DJANGO_NUM_PROXIES", default=0 if DEBUG else None)
+
 if not DEBUG and NUM_PROXIES is None:
     raise ImproperlyConfigured("DJANGO_NUM_PROXIES must match the trusted proxy chain in production.")
+
 APP_BASE_URL = env.str("APP_BASE_URL", default="http://localhost:3000").rstrip("/")
 AUTH_EXCHANGE_SECRET = read_secret("AUTH_EXCHANGE_SECRET")
 if not DEBUG and not APP_BASE_URL.startswith("https://"):
     raise ImproperlyConfigured("APP_BASE_URL must use HTTPS outside development.")
+
 if not DEBUG and len(AUTH_EXCHANGE_SECRET) < 50:
     raise ImproperlyConfigured("AUTH_EXCHANGE_SECRET must be a long, unique production secret.")
+
 SECRET_KEY = read_secret("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
     if not DEBUG:

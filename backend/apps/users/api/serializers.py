@@ -248,6 +248,7 @@ class CurrentUserSerializer(DeveloperSerializer):
         fields = [*DeveloperSerializer.Meta.fields, "email", "emailVerified"]
 
 
+# Serializers to update cureent user profile
 class CurrentUserUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, min_length=2, max_length=150)
     bio = serializers.CharField(required=False, allow_blank=True)
@@ -288,4 +289,3 @@ class CurrentUserUpdateSerializer(serializers.Serializer):
             profile.save(update_fields=[*{("site_url" if key == "website" else key) for key in profile_fields}, "updated_at"])
 
         return instance
-        

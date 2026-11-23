@@ -1,4 +1,6 @@
 from django.db.models import Q
+from django.http import HttpRequest
+
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -17,15 +19,15 @@ from .serializers import (
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request: HttpRequest) -> Response:
         return Response(
             CurrentUserSerializer(
                 request.user,
-                context={"request": request},
+                context={'request': request},
             ).data
         )
 
-    def patch(self, request):
+    def patch(self, request: HttpRequest) -> Response:
         serializer = CurrentUserUpdateSerializer(
             request.user,
             data=request.data,
@@ -34,23 +36,23 @@ class CurrentUserView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(
-            CurrentUserSerializer(user, context={"request": request}).data
+            CurrentUserSerializer(user, context={'request': request}).data
         )
 
 
 class DeveloperPagination(PageNumberPagination):
     page_size = 24
-    page_size_query_param = "page_size"
+    page_size_query_param = 'page_size'
     max_page_size = 60
 
 
 class DeveloperListView(APIView):
     permission_classes = [AllowAny]
 
-    def get(self, request):
-        queryset = User.objects.filter(is_active=True).select_related("profile").order_by("username")
-        search = request.query_params.get("search", "").strip()
-        expertise = request.query_params.get("expertise", "").strip()
+    def get(self, request: HttpRequest) -> Response:
+        queryset = User.objects.filter(is_active=True).select_related('profile').order_by('username')
+        search = request.query_params.get('search', '').strip()
+        expertise = request.query_params.get('expertise', '').strip()
 
         if search:
             search_filter = (
@@ -71,7 +73,7 @@ class DeveloperListView(APIView):
                 search_filter |= Q(expertise_domain__in=matching_domains)
             queryset = queryset.filter(search_filter)
 
-        if expertise and expertise.casefold() not in {"toutes", "all"}:
+        if expertise and expertise.casefold() not in {'toutes', "all"}:
             matching_domains = [
                 value
                 for value, label in User.Domain.choices
@@ -90,7 +92,7 @@ class DeveloperListView(APIView):
             DeveloperSerializer(
                 page,
                 many=True,
-                context={"request": request},
+                context={'request': request},
             ).data
         )
 
@@ -98,7 +100,7 @@ class DeveloperListView(APIView):
 class DeveloperDetailView(APIView):
     permission_classes = [AllowAny]
 
-    def get(self, request, username):
+    def get(self, request: HttpRequest, username: str) -> Response:
         user = (
             User.objects.select_related("profile")
             .filter(username__iexact=username, is_active=True)
@@ -106,33 +108,33 @@ class DeveloperDetailView(APIView):
         )
         if user is None:
             return Response(
-                {"detail": "Profil introuvable."},
+                {'detail': "Profil introuvable."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(
-            DeveloperSerializer(user, context={"request": request}).data
+            DeveloperSerializer(user, context={'request': request}).data
         )
 
 
 class DeveloperFollowView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_target(self, username):
+    def get_target(self, username: HttpRequest) -> Response:
         return User.objects.filter(
             username__iexact=username,
             is_active=True,
         ).first()
 
-    def put(self, request, username):
+    def put(self, request: HttpRequest, username: str) -> Response:
         target = self.get_target(username)
         if target is None:
             return Response(
-                {"detail": "Profil introuvable."},
+                {'detail': "Profil introuvable."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         if target.pk == request.user.pk:
             return Response(
-                {"detail": "Vous ne pouvez pas vous suivre vous-même."},
+                {'detail': "Vous ne pouvez pas vous suivre vous-même."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -144,22 +146,22 @@ class DeveloperFollowView(APIView):
             create_notification(
                 recipient=target,
                 actor=request.user,
-                kind="follow",
+                kind='follow',
                 message="a commencé à vous suivre",
                 target_url=f"/developers/{request.user.username}",
             )
         return Response(
-            {"isFollowed": True, "followersCount": target.followers.count()}
+            {'isFollowed': True, 'followersCount': target.followers.count()}
         )
 
-    def delete(self, request, username):
+    def delete(self, request: HttpRequest, username: str) -> Response:
         target = self.get_target(username)
         if target is None:
             return Response(
-                {"detail": "Profil introuvable."},
+                {'detail': "Profil introuvable."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         Follow.objects.filter(follower=request.user, followed=target).delete()
         return Response(
-            {"isFollowed": False, "followersCount": target.followers.count()}
+            {'isFollowed': False, 'followersCount': target.followers.count()}
         )
