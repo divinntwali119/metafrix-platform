@@ -64,29 +64,19 @@ if not DEBUG and not ALLOWED_HOSTS:
 if not DEBUG and any(host == "*" or host.startswith((".", "*.")) for host in ALLOWED_HOSTS):
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must not contain a wildcard in production.")
 
-database_url = read_secret("DATABASE_URL")
-database_password_file = env.str("DATABASE_PASSWORD_FILE", default="").strip()
-if not database_url and database_password_file:
-    database_password = read_secret_file(database_password_file, "DATABASE_PASSWORD_FILE")
-    database_name = env.str("POSTGRES_DB", default="").strip()
-    database_user = env.str("POSTGRES_USER", default="").strip()
-    database_host = env.str("DATABASE_HOST", default="db").strip()
-    database_port = env.str("DATABASE_PORT", default="5432").strip()
-    if not database_name or not database_user or not database_host or not database_port:
-        raise ImproperlyConfigured("PostgreSQL database name, user, host, and port must be configured.")
-    database_url = (
-        f"postgresql://{quote(database_user, safe='')}:{quote(database_password, safe='')}"
-        f"@{database_host}:{database_port}/{quote(database_name, safe='')}"
-    )
-if not DEBUG and not database_url:
-    raise ImproperlyConfigured("DATABASE_URL must point to the production database.")
-if not DEBUG and not database_url.lower().startswith(("postgres://", "postgresql://")):
-    raise ImproperlyConfigured("DATABASE_URL must use PostgreSQL outside development.")
+database_password = read_secret("DATABASE_PASSWORD")
 DATABASES = {
-    "default": env.db_url(
-        "DATABASE_URL",
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-    )
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env.str("POSTGRES_DB"),
+        "USER": env.str("POSTGRES_USER"),
+        "PASSWORD": database_password,
+        "HOST": env.str("POSTGRES_HOST"),
+        "PORT": env.str("POSTGRES_PORT", default="5432"),
+        "OPTIONS": {
+            "sslmode": "require",
+        } if not DEBUG else {},
+    }
 }
 
 cache_url = env.str("DJANGO_CACHE_URL", default="")

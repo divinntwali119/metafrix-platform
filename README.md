@@ -59,7 +59,8 @@ d’image absolues renvoyées par l’API sont utilisées telles quelles.
 
 ## Démarrage du backend local
 
-Prérequis : Python 3.14 et Git. Depuis le répertoire du projet :
+Prérequis : Python 3.14, Git et un serveur PostgreSQL accessible avec les
+identifiants définis dans `backend/.env`. Depuis le répertoire du projet :
 
 ```bash
 python -m venv .venv
@@ -102,22 +103,23 @@ python manage.py test
 
 ## Déploiement Docker
 
-Prérequis : Docker Engine avec `docker compose`, un domaine déjà dirigé vers le
-serveur, un reverse proxy HTTPS géré par l’exploitation et un compte SMTP
-authentifié. La stack expose Next.js uniquement sur `127.0.0.1:3000`; le proxy
-TLS externe doit router le domaine public vers ce port. L’API Django, PostgreSQL
-et Redis ne publient aucun port sur l’hôte. Si le port 3000 est déjà utilisé,
-changez `WEB_PORT` dans la configuration Compose.
+Prérequis : Docker Engine avec `docker compose`, une base PostgreSQL externe
+accessible depuis le serveur, un domaine dirigé vers celui-ci, un reverse proxy
+HTTPS et un compte SMTP authentifié. Compose lance Redis, Django et Next.js;
+PostgreSQL doit être provisionné séparément et ses paramètres renseignés dans
+`.env.docker`. Next.js est exposé uniquement sur `127.0.0.1:3000`; le proxy TLS
+externe doit router le domaine public vers ce port. Si le port 3000 est déjà
+utilisé, changez `WEB_PORT`.
 
 1. Copier `.env.docker.example` en `.env.docker`, puis définir l’URL publique
-	HTTPS, les hôtes Django, le compte SMTP, son expéditeur vérifié et les autres
-	paramètres non secrets :
+	HTTPS, les hôtes Django, l’adresse et les identifiants de la base PostgreSQL,
+	le compte SMTP, son expéditeur vérifié et les autres paramètres non secrets :
 
 	```bash
 	cp .env.docker.example .env.docker
 	```
-2. Créer le répertoire de secrets à accès restreint et produire des secrets
-	indépendants pour PostgreSQL, Django et l’échange serveur OAuth :
+2. Créer le répertoire de secrets à accès restreint. Le mot de passe PostgreSQL
+	dans ce fichier doit correspondre à celui du compte provisionné dans la base :
 
 	```bash
 	mkdir -p .secrets
@@ -139,6 +141,11 @@ changez `WEB_PORT` dans la configuration Compose.
 	pas un coffre-fort chiffré. Après avoir renseigné ces fichiers, rendez-les
 	lisibles par l’UID non-root des conteneurs (`chmod 444 .secrets/*`) et gardez
 	le répertoire hôte protégé (`chmod 700 .secrets`).
+	`DJANGO_NUM_PROXIES` doit correspondre au nombre de proxys approuvés dans
+	la chaîne devant Django; sa valeur par défaut de Compose est `1`.
+	Pour une origine média distincte, définissez `NEXT_PUBLIC_BACKEND_MEDIA_URL`
+	dans `.env.docker` : elle est incorporée à l’image lors du build, donc tout
+	changement nécessite de reconstruire le frontend.
 3. Démarrer la pile (les migrations et `collectstatic` s’exécutent avant Django) :
 
 	```bash
@@ -169,8 +176,9 @@ changez `WEB_PORT` dans la configuration Compose.
 	docker compose --env-file .env.docker down
 	```
 
-	`down -v` supprime PostgreSQL, les médias, les dépôts Git et les assets
-	statiques : ne l’utilisez pas pour une opération d’arrêt ordinaire.
+	`down -v` supprime les volumes Compose Redis, médias, dépôts Git et assets
+	statiques. La base PostgreSQL externe n’est pas supprimée; ne supprimez pas
+	les volumes si vous souhaitez conserver les données applicatives.
 5. Vérifier le point d’entrée via le proxy HTTPS et consulter l’état des
 	conteneurs. Les healthchecks testent Next.js et Django/DB; Redis a son propre
 	contrôle. Configurez les callbacks exacts chez les fournisseurs OAuth :
@@ -180,9 +188,10 @@ changez `WEB_PORT` dans la configuration Compose.
 	secrets sont provisionnés. Sans SMTP valide, les boutons d’inscription,
 	confirmation et récupération ne peuvent pas délivrer leurs e-mails.
 
-Les données PostgreSQL, médias, dépôts Git et statiques résident dans des
-volumes Docker nommés. Établissez des sauvegardes chiffrées et hors hôte pour la
-base, les volumes média et Git, puis testez régulièrement leur restauration.
+Les données PostgreSQL résident dans la base externe; les médias, dépôts Git,
+Redis et statiques résident dans des volumes Docker nommés. Établissez des
+sauvegardes chiffrées et hors hôte pour la base externe et les volumes média et
+Git, puis testez régulièrement leur restauration.
 Les médias sont encore servis depuis le système de fichiers applicatif : pour
 une exposition publique, ajoutez un service/proxy média ou un stockage objet
 avec les contrôles d’accès adéquats. La tâche Celery d’encodage vidéo n’est pas
@@ -202,7 +211,9 @@ de l’exploitation. En production, Django refuse les secrets faibles, les hôte
 wildcard, SQLite, l’absence de Redis, SSL désactivé et HSTS désactivé. Fournissez
 un `DJANGO_SECRET_KEY` aléatoire via un gestionnaire de secrets, des
 `DJANGO_ALLOWED_HOSTS` exacts, `DJANGO_NUM_PROXIES` correspondant à la chaîne
-de proxies réellement de confiance, une `DATABASE_URL` PostgreSQL, un
+de proxies réellement de confiance, `POSTGRES_DB`, `POSTGRES_USER`,
+`POSTGRES_HOST`, `POSTGRES_PORT` et le secret `DATABASE_PASSWORD` (ou
+`DATABASE_PASSWORD_FILE`) pour la base PostgreSQL externe, un
 `DJANGO_CACHE_URL` Redis, un stockage persistant pour les dépôts Git et les
 médias, un SMTP opérationnel, et `BACKEND_API_URL` dans l’environnement serveur
 Next.js. Utilisez HTTPS de bout en bout et configurez le proxy TLS uniquement si

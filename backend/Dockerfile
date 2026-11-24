@@ -22,8 +22,7 @@ FROM python-base AS runtime
 ENV PATH="/opt/venv/bin:$PATH" \
     HOME=/home/metafrix \
     DJANGO_MEDIA_ROOT=/var/lib/metafrix/media \
-    GIT_REPOSITORY_ROOT=/var/lib/metafrix/git/repos \
-    PORT=8000
+    GIT_REPOSITORY_ROOT=/var/lib/metafrix/git/repos
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \

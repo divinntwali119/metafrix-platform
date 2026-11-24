@@ -1,28 +1,6 @@
 name: metafrix
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-metafrix}
-      POSTGRES_USER: ${POSTGRES_USER:-metafrix}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    secrets:
-      - postgres_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    networks:
-      - data
-    security_opt:
-      - no-new-privileges:true
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -50,14 +28,14 @@ services:
       DJANGO_DEBUG: "False"
       DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-backend,localhost,127.0.0.1}
-      DJANGO_NUM_PROXIES: "1"
+      DJANGO_NUM_PROXIES: ${DJANGO_NUM_PROXIES:-1}
       APP_BASE_URL: ${APP_BASE_URL:?Set APP_BASE_URL to the public HTTPS application URL}
       AUTH_EXCHANGE_SECRET_FILE: /run/secrets/auth_exchange_secret
       DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
-      POSTGRES_DB: ${POSTGRES_DB:-metafrix}
-      POSTGRES_USER: ${POSTGRES_USER:-metafrix}
-      DATABASE_HOST: db
-      DATABASE_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_HOST: ${POSTGRES_HOST:?Set POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       DJANGO_CACHE_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       DJANGO_MEDIA_ROOT: /var/lib/metafrix/media
@@ -75,20 +53,21 @@ services:
       DJANGO_EMAIL_HOST_PASSWORD_FILE: /run/secrets/smtp_password
       DJANGO_EMAIL_USE_TLS: ${DJANGO_EMAIL_USE_TLS:-True}
       DJANGO_DEFAULT_FROM_EMAIL: ${DJANGO_DEFAULT_FROM_EMAIL:?Set a verified sender address}
-      DJANGO_CSRF_TRUSTED_ORIGINS: ${APP_BASE_URL:?Set APP_BASE_URL to the public HTTPS application URL}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:?Set DJANGO_CSRF_TRUSTED_ORIGINS}
     secrets:
       - django_secret_key
       - auth_exchange_secret
       - postgres_password
       - smtp_password
     depends_on:
-      db:
+      redis:
         condition: service_healthy
     volumes:
       - static_data:/app/staticfiles
     command: ["/bin/sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && echo 'Database migrations and static collection complete.'"]
     networks:
       - data
+      - bff
     security_opt:
       - no-new-privileges:true
 
@@ -100,7 +79,6 @@ services:
     restart: unless-stopped
     environment:
       <<: *backend-environment
-      PORT: "8000"
     secrets:
       - django_secret_key
       - auth_exchange_secret
@@ -109,8 +87,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -137,6 +113,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_MEDIA_URL: ${NEXT_PUBLIC_BACKEND_MEDIA_URL:-}
     image: ${FRONTEND_IMAGE:-metafrix-frontend:local}
     restart: unless-stopped
     init: true
@@ -147,7 +125,6 @@ services:
       AUTH_EXCHANGE_SECRET_FILE: /run/secrets/auth_exchange_secret
       AUTH_COOKIE_SECURE: "true"
       DJANGO_TRUST_PROXY_SSL_HEADER: "true"
-      NEXT_PUBLIC_DEMO_MODE: "false"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET_FILE: /run/secrets/google_client_secret
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
@@ -178,7 +155,6 @@ services:
       - no-new-privileges:true
 
 volumes:
-  postgres_data:
   redis_data:
   static_data:
   media_data:

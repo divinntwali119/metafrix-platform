@@ -49,7 +49,11 @@ jobs:
       APP_BASE_URL: https://metafrix.example.test
       DJANGO_ALLOWED_HOSTS: localhost,testserver,example.com
       DJANGO_NUM_PROXIES: "1"
-      DATABASE_URL: postgresql://afrihub:ci-only-password@127.0.0.1:5432/afrihub
+      POSTGRES_DB: afrihub
+      POSTGRES_USER: afrihub
+      DATABASE_PASSWORD: ci-only-password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
       DJANGO_CACHE_URL: redis://127.0.0.1:6379/0
     steps:
       - name: Checkout repository

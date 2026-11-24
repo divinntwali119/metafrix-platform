@@ -118,7 +118,7 @@ Restent à terminer : upload et stockage sûr des images/avatars, médias héber
 - [ ] Générer les secrets en production et les conserver dans un gestionnaire de secrets; ne jamais réutiliser les valeurs de CI ou d’exemple.
 - [ ] Configurer les hôtes autorisés, DNS, certificats TLS, terminaison HTTPS et en-têtes du reverse proxy.
 - [ ] Configurer `DJANGO_NUM_PROXIES` et vérifier que le reverse proxy écrase `X-Forwarded-For`; ne jamais faire confiance aux valeurs envoyées directement par le navigateur.
-- [ ] Configurer `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DATABASE_URL`, `DJANGO_CACHE_URL`, `BACKEND_API_URL` et `NEXT_PUBLIC_DEMO_MODE=false`.
+- [ ] Configurer `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_HOST`, `POSTGRES_PORT` et `DATABASE_PASSWORD_FILE`, ainsi que `DJANGO_CACHE_URL`, `BACKEND_API_URL` et `NEXT_PUBLIC_DEMO_MODE=false`.
 - [ ] Garder `DJANGO_SECURE_SSL_REDIRECT=True` et un HSTS positif. N’activer `includeSubDomains` ou `preload` qu’après validation de tous les sous-domaines concernés.
 - [ ] Configurer `DJANGO_TRUST_PROXY_SSL_HEADER=True` uniquement si le proxy de confiance retire puis réécrit l’en-tête correspondant.
 - [ ] Configurer le SMTP, son expéditeur, les secrets et la délivrabilité; tester réception et gestion des rebonds.

@@ -8,8 +8,10 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 FROM base AS builder
+ARG NEXT_PUBLIC_BACKEND_MEDIA_URL
 ENV NEXT_TELEMETRY_DISABLED=1 \
-    NEXT_PUBLIC_DEMO_MODE=false
+    NEXT_PUBLIC_DEMO_MODE=false \
+    NEXT_PUBLIC_BACKEND_MEDIA_URL=${NEXT_PUBLIC_BACKEND_MEDIA_URL}
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
