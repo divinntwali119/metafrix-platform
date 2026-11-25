@@ -205,7 +205,7 @@ class IssueAttachmentSerializer(serializers.ModelSerializer):
 class IssueSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
     repositoryId = serializers.CharField(source='repo_id', read_only=True)
-    number = serializers.IntegerField(source='relative_id')
+    number = serializers.IntegerField(source='relative_id', read_only=True)
     body = serializers.CharField(source='description')
     author = UserSerializer(source='submitted_by', read_only=True)
     commentsCount = serializers.SerializerMethodField()
