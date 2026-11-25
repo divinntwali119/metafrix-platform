@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 class HealthCheckView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = []
 
     def get(self, _request: HttpRequest) -> Response:
         return Response(
